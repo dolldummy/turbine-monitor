@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>风机智能监控 v7.0 · 同指标对比预警 & 时间轴筛选</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <title>风机智能监控 v7.1 · 同指标对比预警 & 时间轴筛选</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -110,12 +110,14 @@
         .compare-panel { background: #fef9e3; border-left: 5px solid #f59e0b; margin-top: 12px; }
         .slider-label { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; }
         input[type="datetime-local"] { padding: 6px 10px; border-radius: 20px; border: 1px solid #cbd5e1; }
+        .loading { display: inline-block; width: 20px; height: 20px; border: 2px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.6s linear infinite; margin-left: 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 <div class="container">
     <header class="card">
-        <h1>🌬️ 风机监控 v7.0 · 同指标对比预警 + 时间范围筛选</h1>
+        <h1>🌬️ 风机监控 v7.1 · 同指标对比预警 + 时间轴筛选</h1>
         <div style="display: flex; gap: 8px;">
             <button class="btn btn-outline" onclick="toggleThresholdPanel()">⚙️ 阈值配置</button>
             <button class="btn btn-outline" onclick="resetAllThresholds()">🔄 重置阈值</button>
@@ -123,11 +125,12 @@
         </div>
     </header>
 
-    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <div class="upload-zone" id="uploadZone">
         <div style="font-size: 2.5rem;">📂</div>
         <p><strong>点击或拖拽 Excel 文件 (.xlsx, .xls)</strong></p>
-        <p id="fileNameDisplay" style="color:#2563eb; font-weight:500;"></p>
-        <input type="file" id="fileInput" accept=".xlsx,.xls" hidden onchange="handleFile(event)">
+        <p style="font-size:0.8rem; color:#64748b;">需要包含「机组名称」「时间」列以及各测点数据列</p>
+        <p id="fileNameDisplay" style="color:#2563eb; font-weight:500; margin-top:8px;"></p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
     </div>
 
     <div class="card hidden" id="thresholdCard">
@@ -145,7 +148,7 @@
         </div>
     </div>
 
-    <!-- 数据对比结果界面：同一测点所有机组对比 + 偏离平均值25%预警（可调阈值） -->
+    <!-- 数据对比结果界面：同一测点所有机组对比 + 偏离平均值25%预警 -->
     <div class="card hidden" id="compareResultCard">
         <div class="section-title">⚖️ 数据对比结果 · 同指标机组偏离预警</div>
         <div style="margin-bottom: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 20px;">
@@ -195,14 +198,15 @@
 </div>
 
 <script>
+    // ---------- 全局变量 ----------
     let allData = {};          // { "机组": [{ ts, row }] }
     let allColumns = [];
     let thresholds = {};
     let analysisResult = [];
     let compareChartInstance = null;
-    let deviationThresholdPercent = 25;   // 偏离均值预警阈值
+    let deviationThresholdPercent = 25;
 
-    // ----- 默认阈值库 (继承原有)
+    // ----- 默认阈值库
     const keywordDefaults = [
         { keywords: ['发电机绕组u1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
         { keywords: ['发电机绕组u2温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
@@ -238,18 +242,32 @@
         { keywords: ['主轴温度2'], highWarn: 65, highFault: 70, lowWarn: null, lowFault: null },
         { keywords: ['齿轮箱油池温度'], highWarn: 75, highFault: 80, lowWarn: null, lowFault: null },
     ];
-    function getDefault(col) { const n=col.toLowerCase(); for(let r of keywordDefaults) for(let k of r.keywords) if(n.includes(k.toLowerCase())) return { warnHigh: r.highWarn, faultHigh: r.highFault, warnLow: r.lowWarn, faultLow: r.lowFault }; return null; }
-    function loadThresholds() { const s=localStorage.getItem('turbine_v7'); if(s) try{ thresholds=JSON.parse(s); }catch{ thresholds={}; } }
-    function saveThresholds() { localStorage.setItem('turbine_v7', JSON.stringify(thresholds)); }
+    function getDefault(col) { 
+        const n = col.toLowerCase();
+        for (let r of keywordDefaults) 
+            for (let k of r.keywords) 
+                if (n.includes(k.toLowerCase())) 
+                    return { warnHigh: r.highWarn, faultHigh: r.highFault, warnLow: r.lowWarn, faultLow: r.lowFault };
+        return null;
+    }
+    function loadThresholds() { 
+        const s = localStorage.getItem('turbine_v71');
+        if (s) try { thresholds = JSON.parse(s); } catch(e) { thresholds = {}; }
+        else thresholds = {};
+    }
+    function saveThresholds() { localStorage.setItem('turbine_v71', JSON.stringify(thresholds)); }
 
-    // 全厂平均值 (最新时刻所有机组同一测点)
+    // 全厂平均值
     function computeGlobalAverage() {
         if(!allData || Object.keys(allData).length===0) return {};
         const sum={}, cnt={};
         allColumns.forEach(c=>{ sum[c]=0; cnt[c]=0; });
         for(let entries of Object.values(allData)) {
             const latest=entries[entries.length-1].row;
-            for(let col of allColumns) { let v=parseFloat(latest[col]); if(!isNaN(v)) { sum[col]+=v; cnt[col]++; } }
+            for(let col of allColumns) { 
+                let v=parseFloat(latest[col]); 
+                if(!isNaN(v)) { sum[col]+=v; cnt[col]++; } 
+            }
         }
         let avg={};
         for(let col of allColumns) avg[col]=cnt[col]>0 ? (sum[col]/cnt[col]).toFixed(2) : '—';
@@ -263,14 +281,17 @@
         container.innerHTML=html||'<span>无数据</span>';
     }
 
-    // ***** 核心新增：同测点对比 + 偏离均值预警 *****
+    // 同测点对比 + 偏离均值预警
     function renderCrossTurbineComparison() {
-        if(!allData || Object.keys(allData).length===0) return;
+        if(!allData || Object.keys(allData).length===0 || !allColumns.length) return;
         const selectedCol = document.getElementById('compareMetricSelect').value;
         if(!selectedCol) return;
         const avgMap = computeGlobalAverage();
         const globalAvgVal = parseFloat(avgMap[selectedCol]);
-        if(isNaN(globalAvgVal)) { document.getElementById('compareTableBody').innerHTML='<tr><td colspan="5">无法计算该测点均值</td></tr>'; return; }
+        if(isNaN(globalAvgVal)) { 
+            document.getElementById('compareTableBody').innerHTML='<tr><td colspan="5">无法计算该测点均值</td></tr>'; 
+            return;
+        }
         const turbineValues = [];
         for(let [name, entries] of Object.entries(allData)) {
             const val = parseFloat(entries[entries.length-1].row[selectedCol]);
@@ -282,16 +303,22 @@
         for(let item of turbineValues) {
             let deviation = ((item.val - globalAvgVal) / globalAvgVal) * 100;
             let absDeviation = Math.abs(deviation);
-            let warnStatus = '';
             let warnBadge = '';
+            let warnStatus = '';
             if(absDeviation > deviationThresholdPercent) {
                 warnStatus = deviation > 0 ? `🔺 高于均值 ${deviation.toFixed(1)}%` : `🔻 低于均值 ${deviation.toFixed(1)}%`;
                 warnBadge = `<span class="badge badge-warning">⚠️ 超出阈值</span>`;
                 warningList.push(item.name);
-            } else { warnStatus = '正常范围'; warnBadge = '<span class="badge badge-normal">✅ 正常</span>'; }
+            } else { 
+                warnStatus = '正常范围'; 
+                warnBadge = '<span class="badge badge-normal">✅ 正常</span>';
+            }
             rowsHtml += `<tr style="${absDeviation > deviationThresholdPercent ? 'background:#fff3e3;' : ''}">
-                <td><strong>${item.name}</strong></td><td>${item.val.toFixed(2)}</td><td>${globalAvgVal.toFixed(2)}</td>
-                <td>${deviation>=0?'+':''}${deviation.toFixed(1)}%</td><td>${warnBadge} ${warnStatus}</td>
+                <td><strong>${item.name}</strong></td>
+                <td>${item.val.toFixed(2)}</td>
+                <td>${globalAvgVal.toFixed(2)}</td>
+                <td>${deviation>=0?'+':''}${deviation.toFixed(1)}%</td>
+                <td>${warnBadge} ${warnStatus}</td>
             </tr>`;
         }
         document.getElementById('compareTableBody').innerHTML = rowsHtml;
@@ -309,11 +336,12 @@
     }
     function populateCompareMetricSelect() {
         const select = document.getElementById('compareMetricSelect');
+        if(!allColumns.length) return;
         select.innerHTML = allColumns.map(c=>`<option value="${c}">${c}</option>`).join('');
         if(allColumns.length) renderCrossTurbineComparison();
     }
 
-    // 评估逻辑 (沿用)
+    // 评估逻辑
     function hasAny(cfg) { return cfg && (cfg.warnHigh!==undefined || cfg.faultHigh!==undefined || cfg.warnLow!==undefined || cfg.faultLow!==undefined); }
     function gv(obj,k) { const v=obj[k]; return (v!==undefined && v!==null && !isNaN(v)) ? v : undefined; }
     function evaluate(val,cfg) {
@@ -325,24 +353,65 @@
         if(wl!==undefined && val<=wl) return { level:'warning', direction:'low' };
         return { level:'normal', direction:null };
     }
-    function computeTurbineStats(entries) { const latest=entries[entries.length-1].row; const vals=[]; for(let c of allColumns){let v=parseFloat(latest[c]); if(!isNaN(v)) vals.push(v);} if(!vals.length) return {mean:'—', mode:'—'}; const mean=vals.reduce((a,b)=>a+b,0)/vals.length; const freq=new Map(); vals.forEach(v=>{let key=Math.round(v*100)/100; freq.set(key,(freq.get(key)||0)+1);}); let maxFreq=0,modeVal=null; for(let [val,cnt] of freq.entries()) if(cnt>maxFreq){maxFreq=cnt; modeVal=val;} return {mean:mean.toFixed(2), mode:modeVal!==null?modeVal.toFixed(2):'—'}; }
+    function computeTurbineStats(entries) { 
+        const latest=entries[entries.length-1].row; 
+        const vals=[]; 
+        for(let c of allColumns){let v=parseFloat(latest[c]); if(!isNaN(v)) vals.push(v);} 
+        if(!vals.length) return {mean:'—', mode:'—'}; 
+        const mean=vals.reduce((a,b)=>a+b,0)/vals.length; 
+        const freq=new Map(); 
+        vals.forEach(v=>{let key=Math.round(v*100)/100; freq.set(key,(freq.get(key)||0)+1);}); 
+        let maxFreq=0,modeVal=null; 
+        for(let [val,cnt] of freq.entries()) if(cnt>maxFreq){maxFreq=cnt; modeVal=val;} 
+        return {mean:mean.toFixed(2), mode:modeVal!==null?modeVal.toFixed(2):'—'}; 
+    }
+    
     function analyzeData() {
         if(!Object.keys(allData).length) return;
         analysisResult=[];
         for(let [name, entries] of Object.entries(allData)) {
             const latest=entries[entries.length-1];
             let worstL='normal', worstC='', worstV=0, worstD=null, worstTI='';
-            for(let col of allColumns) { const cfg=thresholds[col]; if(!hasAny(cfg)) continue; const val=parseFloat(latest.row[col]); if(isNaN(val)) continue; const res=evaluate(val,cfg); if(res.level==='fault' && (worstL!=='fault' || Math.abs(val)>Math.abs(worstV))) { worstL='fault'; worstC=col; worstV=val; worstD=res.direction; } else if(res.level==='warning' && worstL!=='fault' && (worstL!=='warning' || Math.abs(val)>Math.abs(worstV))) { worstL='warning'; worstC=col; worstV=val; worstD=res.direction; } }
-            if(worstC) { const cfg=thresholds[worstC]||{}; const p=[]; if(gv(cfg,'warnHigh')!==undefined) p.push(`↑预${cfg.warnHigh}`); if(gv(cfg,'faultHigh')!==undefined) p.push(`↑故${cfg.faultHigh}`); if(gv(cfg,'warnLow')!==undefined) p.push(`↓预${cfg.warnLow}`); if(gv(cfg,'faultLow')!==undefined) p.push(`↓故${cfg.faultLow}`); worstTI=p.join(' / '); }
+            for(let col of allColumns) { 
+                const cfg=thresholds[col]; 
+                if(!hasAny(cfg)) continue; 
+                const val=parseFloat(latest.row[col]); 
+                if(isNaN(val)) continue; 
+                const res=evaluate(val,cfg); 
+                if(res.level==='fault' && (worstL!=='fault' || Math.abs(val)>Math.abs(worstV))) { 
+                    worstL='fault'; worstC=col; worstV=val; worstD=res.direction; 
+                } else if(res.level==='warning' && worstL!=='fault' && (worstL!=='warning' || Math.abs(val)>Math.abs(worstV))) { 
+                    worstL='warning'; worstC=col; worstV=val; worstD=res.direction; 
+                }
+            }
+            if(worstC) { 
+                const cfg=thresholds[worstC]||{}; 
+                const p=[]; 
+                if(gv(cfg,'warnHigh')!==undefined) p.push(`↑预${cfg.warnHigh}`); 
+                if(gv(cfg,'faultHigh')!==undefined) p.push(`↑故${cfg.faultHigh}`); 
+                if(gv(cfg,'warnLow')!==undefined) p.push(`↓预${cfg.warnLow}`); 
+                if(gv(cfg,'faultLow')!==undefined) p.push(`↓故${cfg.faultLow}`); 
+                worstTI=p.join(' / '); 
+            }
             let trend='stable', trendDetail='';
-            if(worstC && entries.length>=2) { const firstVal=parseFloat(entries[0].row[worstC]), lastVal=parseFloat(latest.row[worstC]); if(!isNaN(firstVal) && !isNaN(lastVal) && firstVal!==0) { let delta=lastVal-firstVal, pct=(delta/Math.abs(firstVal))*100; if(pct>5||delta>5) trend='rising'; else if(pct<-5||delta<-5) trend='falling'; trendDetail=`Δ${delta>=0?'+':''}${delta.toFixed(2)} (${pct>=0?'+':''}${pct.toFixed(1)}%)`; } }
+            if(worstC && entries.length>=2) { 
+                const firstVal=parseFloat(entries[0].row[worstC]), lastVal=parseFloat(latest.row[worstC]); 
+                if(!isNaN(firstVal) && !isNaN(lastVal) && firstVal!==0) { 
+                    let delta=lastVal-firstVal, pct=(delta/Math.abs(firstVal))*100; 
+                    if(pct>5||delta>5) trend='rising'; 
+                    else if(pct<-5||delta<-5) trend='falling'; 
+                    trendDetail=`Δ${delta>=0?'+':''}${delta.toFixed(2)} (${pct>=0?'+':''}${pct.toFixed(1)}%)`; 
+                }
+            }
             analysisResult.push({ name, level:worstL, col:worstC, value:worstV, direction:worstD, thresholdInfo:worstTI, trend, trendDetail, entries });
         }
-        const order={fault:0, warning:1, normal:2}; analysisResult.sort((a,b)=>order[a.level]-order[b.level] || Math.abs(b.value)-Math.abs(a.value));
+        const order={fault:0, warning:1, normal:2}; 
+        analysisResult.sort((a,b)=>order[a.level]-order[b.level] || Math.abs(b.value)-Math.abs(a.value));
         renderFullDashboard();
         renderGlobalAveragePanel();
-        if(allColumns.length) populateCompareMetricSelect();  // 刷新对比界面
+        if(allColumns.length) populateCompareMetricSelect();
     }
+    
     function renderFullDashboard() {
         const totalFault=analysisResult.filter(r=>r.level==='fault').length;
         const totalWarn=analysisResult.filter(r=>r.level==='warning').length;
@@ -356,68 +425,356 @@
             else { badge='<span class="badge badge-normal">✅ 正常</span>'; action='正常运行'; }
             const trendHtml=`<span class="trend-btn">${r.trend==='rising'?'📈 上升':r.trend==='falling'?'📉 下降':'➡️ 稳定'} ${r.trendDetail||''}</span>`;
             const rowClass=r.level==='fault'?'highlight-fault':(r.level==='warning'?'highlight-warning':'');
-            tbody.insertAdjacentHTML('beforeend',`<tr class="${rowClass}"><td><strong>${r.name}</strong></td><td>${badge}</td><td>${r.col||'—'} ${r.direction?`(${r.direction==='high'?'过高':'过低'})`:''}</td><td><strong>${r.value?r.value.toFixed(2):'—'}</strong></td><td style="font-size:0.7rem;">${r.thresholdInfo||'—'}</td><td>${trendHtml}</td><td><button class="btn btn-outline" style="padding:4px 10px;" onclick="openMultiCompare('${r.name}')">📊 曲线对比</button></td></tr>`));
+            tbody.insertAdjacentHTML('beforeend',`<tr class="${rowClass}"><td><strong>${r.name}</strong></td><td>${badge}</td><td>${r.col||'—'} ${r.direction?`(${r.direction==='high'?'过高':'过低'})`:''}</td><td><strong>${r.value?r.value.toFixed(2):'—'}</strong></td><td style="font-size:0.7rem;">${r.thresholdInfo||'—'}</td><td>${trendHtml}</td><td><button class="btn btn-outline" style="padding:4px 10px;" onclick="openMultiCompare('${r.name.replace(/'/g,"\\'")}')">📊 曲线对比</button></td></tr>`));
         }
         const detailDiv=document.getElementById('detailContent'); detailDiv.innerHTML='';
-        for(let r of analysisResult){ const stats=computeTurbineStats(r.entries); const items=allColumns.map(col=>{ let v=parseFloat(r.entries[r.entries.length-1].row[col]); if(isNaN(v)) return ''; const cfg=thresholds[col]; let style=''; if(cfg && hasAny(cfg)){ const ev=evaluate(v,cfg); if(ev.level==='fault') style='color:#b91c1c; background:#fee2e2; padding:2px 8px; border-radius:24px;'; else if(ev.level==='warning') style='color:#b45309; background:#fff3e3; padding:2px 8px; border-radius:24px;'; } return `<span style="${style} display:inline-block; margin:4px 6px; font-size:0.7rem;">${col}: <strong>${v.toFixed(2)}</strong></span>`; }).filter(Boolean).join('');
+        for(let r of analysisResult){ 
+            const stats=computeTurbineStats(r.entries); 
+            const items=allColumns.map(col=>{ 
+                let v=parseFloat(r.entries[r.entries.length-1].row[col]); 
+                if(isNaN(v)) return ''; 
+                const cfg=thresholds[col]; 
+                let style=''; 
+                if(cfg && hasAny(cfg)){ 
+                    const ev=evaluate(v,cfg); 
+                    if(ev.level==='fault') style='color:#b91c1c; background:#fee2e2; padding:2px 8px; border-radius:24px;'; 
+                    else if(ev.level==='warning') style='color:#b45309; background:#fff3e3; padding:2px 8px; border-radius:24px;'; 
+                } 
+                return `<span style="${style} display:inline-block; margin:4px 6px; font-size:0.7rem;">${col}: <strong>${v.toFixed(2)}</strong></span>`; 
+            }).filter(Boolean).join('');
             detailDiv.innerHTML+=`<div style="padding:12px; border-bottom:1px solid #eef2f6;"><div><strong>🔹 ${r.name}</strong> <span style="background:#eef2ff; border-radius:20px; padding:2px 12px;">📊 本机组均值: ${stats.mean} / 众值: ${stats.mode}</span></div><div style="margin-top:8px;">${items||'无有效数值'}</div></div>`;
         }
-        document.getElementById('resultCard').classList.remove('hidden'); document.getElementById('detailCard').classList.remove('hidden'); document.getElementById('btnClear').classList.remove('hidden');
-        const faultNames=analysisResult.filter(r=>r.level==='fault').map(r=>r.name); const warnNames=analysisResult.filter(r=>r.level==='warning').map(r=>r.name);
+        document.getElementById('resultCard').classList.remove('hidden'); 
+        document.getElementById('detailCard').classList.remove('hidden'); 
+        document.getElementById('btnClear').classList.remove('hidden');
+        const faultNames=analysisResult.filter(r=>r.level==='fault').map(r=>r.name); 
+        const warnNames=analysisResult.filter(r=>r.level==='warning').map(r=>r.name);
         const insightDiv=document.getElementById('anomalyInsight');
         if(faultNames.length||warnNames.length){ insightDiv.innerHTML=`⚠️ 异常机组高亮：${faultNames.length?'故障('+faultNames.join(',')+')':''} ${warnNames.length?'预警('+warnNames.join(',')+')':''}`; insightDiv.classList.remove('hidden');} else insightDiv.classList.add('hidden');
     }
 
-    // 多机组对比 + 时间范围过滤
+    // 多机组对比 + 时间范围
     function openMultiCompare(initialTurbine) {
-        if(!allData) return;
-        const selectCol=document.getElementById('compareColumnSelect'); selectCol.innerHTML=allColumns.map(c=>`<option value="${c}">${c}</option>`).join('');
+        if(!allData || Object.keys(allData).length===0) return alert('请先上传数据');
+        const selectCol=document.getElementById('compareColumnSelect'); 
+        selectCol.innerHTML=allColumns.map(c=>`<option value="${c}">${c}</option>`).join('');
         const allTurbines=Object.keys(allData).sort();
         const checklist=document.getElementById('multiTurbineChecklist'); checklist.innerHTML='';
-        allTurbines.forEach(turb=>{ const isChecked=(turb===initialTurbine); const label=document.createElement('label'); label.style.cssText='display:inline-flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 12px; border-radius:32px;'; label.innerHTML=`<input type="checkbox" value="${turb}" ${isChecked?'checked':''} onchange="rebuildCompareChartWithTime()"> <span>${turb}</span>`; checklist.appendChild(label); });
-        const target=analysisResult.find(r=>r.name===initialTurbine); if(target && target.col) selectCol.value=target.col;
-        else selectCol.value=allColumns[0];
-        const now=new Date(); const weekAgo=new Date(now.getTime()-7*24*3600*1000);
+        allTurbines.forEach(turb=>{ 
+            const isChecked=(turb===initialTurbine); 
+            const label=document.createElement('label'); 
+            label.style.cssText='display:inline-flex; align-items:center; gap:6px; background:#f1f5f9; padding:4px 12px; border-radius:32px;'; 
+            label.innerHTML=`<input type="checkbox" value="${turb}" ${isChecked?'checked':''} onchange="rebuildCompareChartWithTime()"> <span>${turb}</span>`; 
+            checklist.appendChild(label); 
+        });
+        const target=analysisResult.find(r=>r.name===initialTurbine); 
+        if(target && target.col) selectCol.value=target.col;
+        else if(allColumns.length) selectCol.value=allColumns[0];
+        const now=new Date(); 
+        const weekAgo=new Date(now.getTime()-7*24*3600*1000);
         document.getElementById('startTimeFilter').value=weekAgo.toISOString().slice(0,16);
         document.getElementById('endTimeFilter').value=now.toISOString().slice(0,16);
         document.getElementById('compareModal').classList.remove('hidden');
-        rebuildCompareChartWithTime();
+        setTimeout(()=>rebuildCompareChartWithTime(), 50);
     }
     function rebuildCompareChartWithTime() {
-        const column=document.getElementById('compareColumnSelect').value; if(!column) return;
-        const checkboxes=document.querySelectorAll('#multiTurbineChecklist input[type="checkbox"]'); const selected=Array.from(checkboxes).filter(cb=>cb.checked).map(cb=>cb.value);
+        const column=document.getElementById('compareColumnSelect').value; 
+        if(!column || !allData) return;
+        const checkboxes=document.querySelectorAll('#multiTurbineChecklist input[type="checkbox"]'); 
+        const selected=Array.from(checkboxes).filter(cb=>cb.checked).map(cb=>cb.value);
         if(selected.length===0) return;
-        const startStr=document.getElementById('startTimeFilter').value; const endStr=document.getElementById('endTimeFilter').value;
-        let startDate=startStr?new Date(startStr):null; let endDate=endStr?new Date(endStr):null;
-        const datasets=[]; const colorPalette=['#2563eb','#dc2626','#eab308','#10b981','#8b5cf6','#f97316','#ec489a','#06b6d4'];
+        const startStr=document.getElementById('startTimeFilter').value; 
+        const endStr=document.getElementById('endTimeFilter').value;
+        let startDate=startStr?new Date(startStr):null; 
+        let endDate=endStr?new Date(endStr):null;
+        const datasets=[]; 
+        const colorPalette=['#2563eb','#dc2626','#eab308','#10b981','#8b5cf6','#f97316','#ec489a','#06b6d4','#6366f1','#14b8a6'];
         let globalLabels=null;
-        for(let idx=0;idx<selected.length;idx++){ const name=selected[idx]; const entries=allData[name]; if(!entries) continue;
-            let filtered=entries.filter(e=>{ const t=e.ts; if(startDate && t<startDate) return false; if(endDate && t>endDate) return false; return true; });
+        for(let idx=0;idx<selected.length;idx++){ 
+            const name=selected[idx]; 
+            const entries=allData[name]; 
+            if(!entries) continue;
+            let filtered=entries.filter(e=>{ 
+                const t=e.ts; 
+                if(startDate && t<startDate) return false; 
+                if(endDate && t>endDate) return false; 
+                return true; 
+            });
             if(filtered.length===0) continue;
             const labels=filtered.map(e=>`${e.ts.getMonth()+1}/${e.ts.getDate()} ${String(e.ts.getHours()).padStart(2,'0')}:${String(e.ts.getMinutes()).padStart(2,'0')}`);
             if(!globalLabels) globalLabels=labels;
             const values=filtered.map(e=>parseFloat(e.row[column])).filter(v=>!isNaN(v));
-            if(values.length) datasets.push({ label:`${name} (${column})`, data:values, borderColor:colorPalette[idx%colorPalette.length], borderWidth:2, fill:false, tension:0.2, pointRadius:2 });
+            if(values.length) datasets.push({ 
+                label:`${name} (${column})`, 
+                data:values, 
+                borderColor:colorPalette[idx%colorPalette.length], 
+                borderWidth:2, 
+                fill:false, 
+                tension:0.2, 
+                pointRadius:2 
+            });
         }
         if(datasets.length===0 || !globalLabels) return;
         const ctx=document.getElementById('compareChart').getContext('2d');
         if(compareChartInstance) compareChartInstance.destroy();
-        compareChartInstance=new Chart(ctx,{ type:'line', data:{ labels:globalLabels, datasets }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } } } });
+        compareChartInstance=new Chart(ctx,{ 
+            type:'line', 
+            data:{ labels:globalLabels, datasets }, 
+            options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } } } 
+        });
     }
-    function clearTimeFilter(){ document.getElementById('startTimeFilter').value=''; document.getElementById('endTimeFilter').value=''; rebuildCompareChartWithTime(); }
-    function closeCompareModal(){ document.getElementById('compareModal').classList.add('hidden'); if(compareChartInstance){ compareChartInstance.destroy(); compareChartInstance=null; } }
+    function clearTimeFilter(){ 
+        document.getElementById('startTimeFilter').value=''; 
+        document.getElementById('endTimeFilter').value=''; 
+        rebuildCompareChartWithTime(); 
+    }
+    function closeCompareModal(){ 
+        document.getElementById('compareModal').classList.add('hidden'); 
+        if(compareChartInstance){ compareChartInstance.destroy(); compareChartInstance=null; } 
+    }
 
     // 阈值UI
-    function renderThresholdPanel(){ const grid=document.getElementById('thresholdGrid'); grid.innerHTML=allColumns.map(col=>{ const c=thresholds[col]||{}; const d=getDefault(col); const wh=c.warnHigh??d?.warnHigh??''; const fh=c.faultHigh??d?.faultHigh??''; const wl=c.warnLow??d?.warnLow??''; const fl=c.faultLow??d?.faultLow??''; return `<div class="threshold-item"><label style="min-width:130px;">${col}</label><div>↑预<input type="number" step="any" value="${wh}" onchange="upd('${col.replace(/'/g,"\\'")}','warnHigh',this.value)"></div><div>↑故<input type="number" step="any" value="${fh}" onchange="upd('${col.replace(/'/g,"\\'")}','faultHigh',this.value)"></div><div>↓预<input type="number" step="any" value="${wl}" onchange="upd('${col.replace(/'/g,"\\'")}','warnLow',this.value)"></div><div>↓故<input type="number" step="any" value="${fl}" onchange="upd('${col.replace(/'/g,"\\'")}','faultLow',this.value)"></div></div>`; }).join(''); }
-    window.upd=function(col,field,val){ if(!thresholds[col]) thresholds[col]={}; const num=parseFloat(val); isNaN(num)?delete thresholds[col][field]:thresholds[col][field]=num; if(Object.keys(thresholds[col]).length===0) delete thresholds[col]; saveThresholds(); };
-    function resetAllThresholds(){ if(!confirm('重置阈值')) return; thresholds={}; allColumns.forEach(c=>{const d=getDefault(c); if(d) thresholds[c]={...d};}); saveThresholds(); renderThresholdPanel(); if(Object.keys(allData).length) analyzeData(); }
+    function renderThresholdPanel() { 
+        const grid=document.getElementById('thresholdGrid'); 
+        if(!allColumns.length) { grid.innerHTML='<div>无测点数据</div>'; return; }
+        grid.innerHTML=allColumns.map(col=>{ 
+            const c=thresholds[col]||{}; 
+            const d=getDefault(col); 
+            const wh=c.warnHigh??d?.warnHigh??''; 
+            const fh=c.faultHigh??d?.faultHigh??''; 
+            const wl=c.warnLow??d?.warnLow??''; 
+            const fl=c.faultLow??d?.faultLow??''; 
+            return `<div class="threshold-item"><label style="min-width:130px;">${col}</label>
+                <div>↑预<input type="number" step="any" value="${wh}" onchange="upd('${col.replace(/'/g,"\\'")}','warnHigh',this.value)"></div>
+                <div>↑故<input type="number" step="any" value="${fh}" onchange="upd('${col.replace(/'/g,"\\'")}','faultHigh',this.value)"></div>
+                <div>↓预<input type="number" step="any" value="${wl}" onchange="upd('${col.replace(/'/g,"\\'")}','warnLow',this.value)"></div>
+                <div>↓故<input type="number" step="any" value="${fl}" onchange="upd('${col.replace(/'/g,"\\'")}','faultLow',this.value)"></div></div>`; 
+        }).join(''); 
+    }
+    window.upd=function(col,field,val){ 
+        if(!thresholds[col]) thresholds[col]={}; 
+        const num=parseFloat(val); 
+        isNaN(num)?delete thresholds[col][field]:thresholds[col][field]=num; 
+        if(Object.keys(thresholds[col]).length===0) delete thresholds[col]; 
+        saveThresholds(); 
+    };
+    function resetAllThresholds(){ 
+        if(!confirm('重置所有阈值为默认值？')) return; 
+        thresholds={}; 
+        allColumns.forEach(c=>{const d=getDefault(c); if(d) thresholds[c]={...d};}); 
+        saveThresholds(); 
+        renderThresholdPanel(); 
+        if(Object.keys(allData).length) analyzeData(); 
+    }
     function toggleThresholdPanel(){ document.getElementById('thresholdCard').classList.toggle('hidden'); }
     function reanalyze(){ if(Object.keys(allData).length) analyzeData(); else alert('请先上传数据'); }
-    function clearAll(){ allData={}; allColumns=[]; analysisResult=[]; ['statsRowMain','resultCard','detailCard','compareResultCard','btnClear'].forEach(id=>document.getElementById(id)?.classList.add('hidden')); document.getElementById('fileNameDisplay').innerText=''; }
-    function handleFile(e){ const f=e.target.files[0]; if(f) processFile(f); }
-    function processFile(file){ document.getElementById('fileNameDisplay').textContent='📄 '+file.name; const reader=new FileReader(); reader.onload=ev=>{ const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'}); const sheet=wb.Sheets[wb.SheetNames[0]]; const rows=XLSX.utils.sheet_to_json(sheet,{defval:null}); if(!rows.length) return alert('无数据'); allColumns=Object.keys(rows[0]).filter(k=>!['机组名称','时间'].includes(k)); const map={}; rows.forEach(row=>{ const name=row['机组名称'], timeStr=row['时间']; if(!name||!timeStr) return; let ts; try{ ts=new Date(timeStr.replace(' ','T')); if(isNaN(ts)) throw 0; }catch{ let parts=timeStr.split(/[ :\-]/); ts=new Date(parts[0],parts[1]-1,parts[2],parts[3]||0,parts[4]||0,parts[5]||0); } if(!map[name]) map[name]=[]; map[name].push({ts,row}); }); for(let n in map) map[n].sort((a,b)=>a.ts-b.ts); allData=map; loadThresholds(); let changed=false; allColumns.forEach(col=>{ if(!thresholds[col]){ const d=getDefault(col); if(d){ thresholds[col]={...d}; changed=true; } } }); if(changed) saveThresholds(); renderThresholdPanel(); document.getElementById('thresholdCard').classList.remove('hidden'); analyzeData(); }; reader.readAsArrayBuffer(file); }
-    document.addEventListener('DOMContentLoaded',()=>{ const zone=document.getElementById('uploadZone'); zone.addEventListener('dragover',e=>{ e.preventDefault(); zone.classList.add('drag-over'); }); zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over')); zone.addEventListener('drop',e=>{ e.preventDefault(); zone.classList.remove('drag-over'); const f=e.dataTransfer.files[0]; if(f) processFile(f); }); loadThresholds(); });
-    window.openMultiCompare=openMultiCompare; window.rebuildCompareChartWithTime=rebuildCompareChartWithTime; window.clearTimeFilter=clearTimeFilter; window.closeCompareModal=closeCompareModal; window.updateDeviationThresholdAndCompare=updateDeviationThresholdAndCompare;
+    function clearAll(){ 
+        allData={}; allColumns=[]; analysisResult=[];
+        ['statsRowMain','resultCard','detailCard','compareResultCard','thresholdCard','btnClear'].forEach(id=>{
+            const el=document.getElementById(id); if(el) el.classList.add('hidden');
+        });
+        document.getElementById('fileNameDisplay').innerText=''; 
+        document.getElementById('thresholdGrid').innerHTML='';
+    }
+
+    // 核心文件处理 - 修复加载问题
+    function handleFile(file) {
+        if(!file) return;
+        // 显示加载状态
+        const zone = document.getElementById('uploadZone');
+        const originalHtml = zone.innerHTML;
+        zone.innerHTML = `<div style="font-size:2rem;">⏳</div><p>正在解析文件，请稍候...</p><div class="loading"></div>`;
+        
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                const data = new Uint8Array(ev.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: null });
+                
+                if(!rows || rows.length === 0) {
+                    throw new Error('Excel文件中没有数据行');
+                }
+                
+                // 检查必要列
+                const firstRow = rows[0];
+                if(!firstRow.hasOwnProperty('机组名称') && !firstRow.hasOwnProperty('机组')) {
+                    throw new Error('Excel缺少"机组名称"或"机组"列');
+                }
+                if(!firstRow.hasOwnProperty('时间') && !firstRow.hasOwnProperty('timestamp')) {
+                    throw new Error('Excel缺少"时间"列');
+                }
+                
+                // 获取机组名称列（兼容两种命名）
+                const turbineCol = firstRow.hasOwnProperty('机组名称') ? '机组名称' : '机组';
+                const timeCol = firstRow.hasOwnProperty('时间') ? '时间' : 'timestamp';
+                
+                // 获取所有测点列（排除机组和时间列）
+                allColumns = Object.keys(firstRow).filter(k => k !== turbineCol && k !== timeCol);
+                
+                if(allColumns.length === 0) {
+                    throw new Error('未找到有效的测点数据列');
+                }
+                
+                // 按机组分组数据
+                const map = {};
+                for(let row of rows) {
+                    const name = row[turbineCol];
+                    const timeStr = row[timeCol];
+                    if(!name || !timeStr) continue;
+                    
+                    // 解析时间
+                    let ts;
+                    try {
+                        ts = new Date(timeStr);
+                        if(isNaN(ts.getTime())) {
+                            // 尝试其他格式
+                            let cleaned = timeStr.replace(/\//g, '-');
+                            ts = new Date(cleaned);
+                            if(isNaN(ts.getTime())) throw new Error('Invalid date');
+                        }
+                    } catch(e) {
+                        // 手动解析 "2024-01-01 12:00:00" 格式
+                        let parts = timeStr.split(/[ :\-]/);
+                        if(parts.length >= 3) {
+                            ts = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]), 
+                                         parseInt(parts[3])||0, parseInt(parts[4])||0, parseInt(parts[5])||0);
+                        } else {
+                            continue;
+                        }
+                    }
+                    
+                    if(!map[name]) map[name] = [];
+                    map[name].push({ ts, row });
+                }
+                
+                if(Object.keys(map).length === 0) {
+                    throw new Error('无法解析机组数据，请检查Excel格式');
+                }
+                
+                // 按时间排序
+                for(let n in map) {
+                    map[n].sort((a,b) => a.ts - b.ts);
+                }
+                
+                allData = map;
+                
+                // 加载阈值
+                loadThresholds();
+                
+                // 为没有配置阈值的测点设置默认阈值
+                let changed = false;
+                for(let col of allColumns) {
+                    if(!thresholds[col]) {
+                        const d = getDefault(col);
+                        if(d) {
+                            thresholds[col] = { ...d };
+                            changed = true;
+                        }
+                    }
+                }
+                if(changed) saveThresholds();
+                
+                // 渲染界面
+                renderThresholdPanel();
+                document.getElementById('thresholdCard').classList.remove('hidden');
+                document.getElementById('fileNameDisplay').innerHTML = `✅ 已加载: ${file.name} (${Object.keys(allData).length}台机组, ${allColumns.length}个测点)`;
+                
+                // 分析数据
+                analyzeData();
+                
+                // 恢复上传区域样式
+                zone.innerHTML = originalHtml;
+                zone.querySelector('#fileInput')?.remove();
+                const newInput = document.createElement('input');
+                newInput.type = 'file';
+                newInput.id = 'fileInput';
+                newInput.accept = '.xlsx,.xls';
+                newInput.hidden = true;
+                newInput.onchange = (e) => { if(e.target.files[0]) handleFile(e.target.files[0]); };
+                zone.appendChild(newInput);
+                
+            } catch(err) {
+                console.error('解析错误:', err);
+                zone.innerHTML = `<div style="font-size:2rem;">❌</div><p style="color:#dc2626;">解析失败: ${err.message}</p><p>请确保Excel包含「机组名称」「时间」列及测点数据</p>`;
+                setTimeout(() => {
+                    zone.innerHTML = originalHtml;
+                    const newInput = document.createElement('input');
+                    newInput.type = 'file';
+                    newInput.id = 'fileInput';
+                    newInput.accept = '.xlsx,.xls';
+                    newInput.hidden = true;
+                    newInput.onchange = (e) => { if(e.target.files[0]) handleFile(e.target.files[0]); };
+                    zone.appendChild(newInput);
+                }, 3000);
+            }
+        };
+        reader.onerror = function() {
+            zone.innerHTML = `<div style="font-size:2rem;">❌</div><p style="color:#dc2626;">文件读取失败</p>`;
+            setTimeout(() => {
+                zone.innerHTML = originalHtml;
+                const newInput = document.createElement('input');
+                newInput.type = 'file';
+                newInput.id = 'fileInput';
+                newInput.accept = '.xlsx,.xls';
+                newInput.hidden = true;
+                newInput.onchange = (e) => { if(e.target.files[0]) handleFile(e.target.files[0]); };
+                zone.appendChild(newInput);
+            }, 2000);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // 绑定上传事件
+    document.addEventListener('DOMContentLoaded', () => {
+        const zone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        
+        zone.addEventListener('click', (e) => {
+            if(e.target === fileInput || fileInput.contains(e.target)) return;
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files && e.target.files[0]) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        // 拖拽上传
+        zone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            zone.classList.add('drag-over');
+        });
+        
+        zone.addEventListener('dragleave', () => {
+            zone.classList.remove('drag-over');
+        });
+        
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if(files && files[0]) {
+                handleFile(files[0]);
+            }
+        });
+        
+        loadThresholds();
+    });
+    
+    // 全局函数暴露
+    window.openMultiCompare = openMultiCompare;
+    window.rebuildCompareChartWithTime = rebuildCompareChartWithTime;
+    window.clearTimeFilter = clearTimeFilter;
+    window.closeCompareModal = closeCompareModal;
+    window.updateDeviationThresholdAndCompare = updateDeviationThresholdAndCompare;
+    window.toggleThresholdPanel = toggleThresholdPanel;
+    window.resetAllThresholds = resetAllThresholds;
+    window.reanalyze = reanalyze;
+    window.clearAll = clearAll;
+    window.renderCrossTurbineComparison = renderCrossTurbineComparison;
 </script>
 </body>
 </html>
