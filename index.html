@@ -2,125 +2,254 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>风机状态监控 v3.1 · 精确阈值</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
-    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>风机状态监控 v5.0 · 智能统计与异常高亮</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        :root {
-            --bg: #f0f2f5;
-            --card-bg: #ffffff;
-            --text: #1a1a2e;
-            --text-secondary: #555;
-            --border: #e0e0e0;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --normal: #10b981;
-            --primary: #3b82f6;
-            --shadow: 0 2px 12px rgba(0,0,0,0.05);
-            --radius: 12px;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', Roboto, 'Microsoft YaHei', sans-serif;
+            background: #f0f4f9;
+            color: #1e293b;
+            line-height: 1.5;
         }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background:var(--bg); color:var(--text); line-height:1.6; }
-        .container { max-width:1500px; margin:0 auto; padding:20px; }
-        header { background:var(--card-bg); border-radius:var(--radius); padding:20px 28px; margin-bottom:20px; box-shadow:var(--shadow); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; }
-        header h1 { font-size:1.5rem; font-weight:700; display:flex; align-items:center; gap:10px; }
-        header h1 span { background:var(--primary); color:#fff; font-size:0.7rem; padding:3px 10px; border-radius:20px; font-weight:500; }
-        .btn { padding:9px 18px; border:none; border-radius:8px; font-size:0.88rem; font-weight:600; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:6px; }
-        .btn-primary { background:var(--primary); color:#fff; } .btn-primary:hover { background:#2563eb; box-shadow:0 4px 12px rgba(59,130,246,0.3); }
-        .btn-outline { background:#fff; color:var(--primary); border:2px solid var(--primary); } .btn-outline:hover { background:#eff6ff; }
-        .btn-danger { background:#fff; color:var(--danger); border:2px solid var(--danger); } .btn-danger:hover { background:#fef2f2; }
-        .upload-zone { border:3px dashed var(--border); border-radius:var(--radius); padding:40px; text-align:center; cursor:pointer; transition:all 0.3s; background:#fafbfc; margin-bottom:20px; }
-        .upload-zone:hover, .upload-zone.drag-over { border-color:var(--primary); background:#eff6ff; }
-        .upload-zone .icon { font-size:2.8rem; margin-bottom:10px; }
-        .upload-zone p { color:var(--text-secondary); }
-        .card { background:var(--card-bg); border-radius:var(--radius); padding:18px 22px; box-shadow:var(--shadow); margin-bottom:18px; }
-        .section-title { font-size:1.05rem; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
-        .section-title::before { content:''; width:4px; height:18px; background:var(--primary); border-radius:2px; }
-        .stats-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
-        .stat-card { flex:1; min-width:110px; background:#f9fafb; border-radius:10px; padding:14px; text-align:center; border:1px solid var(--border); }
-        .stat-card .number { font-size:1.8rem; font-weight:800; }
-        .stat-card .label { font-size:0.8rem; color:var(--text-secondary); }
-        .stat-card.warning .number { color:var(--warning); } .stat-card.danger .number { color:var(--danger); } .stat-card.normal .number { color:var(--normal); } .stat-card.total .number { color:var(--primary); }
-        .table-wrapper { max-height:550px; overflow-y:auto; border-radius:8px; border:1px solid var(--border); }
-        table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-        th,td { padding:9px 6px; text-align:center; border-bottom:1px solid var(--border); white-space:nowrap; }
-        th { background:#f8fafc; font-weight:700; position:sticky; top:0; z-index:2; }
-        .badge { display:inline-block; padding:4px 10px; border-radius:20px; font-weight:700; font-size:0.75rem; }
-        .badge-danger { background:#fef2f2; color:#dc2626; } .badge-warning { background:#fffbeb; color:#d97706; } .badge-normal { background:#ecfdf5; color:#059669; }
-        .badge-rising { background:#fff7ed; color:#ea580c; } .badge-stable { background:#f0fdf4; color:#16a34a; } .badge-falling { background:#eff6ff; color:#2563eb; }
-        .threshold-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(380px,1fr)); gap:10px; max-height:550px; overflow-y:auto; padding-right:8px; }
-        .threshold-item { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; background:#f8fafc; padding:8px 12px; border-radius:8px; font-size:0.78rem; }
-        .threshold-item label { font-weight:600; min-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .threshold-item .group { display:flex; align-items:center; gap:3px; }
-        .threshold-item .group span { font-size:0.7rem; color:var(--text-secondary); }
-        .threshold-item input { width:60px; padding:5px 4px; border:1px solid var(--border); border-radius:5px; text-align:center; font-size:0.78rem; }
-        .threshold-item input:focus { outline:2px solid var(--primary); border-color:var(--primary); }
-        .hidden { display:none !important; }
-        @media (max-width:768px) { .container { padding:8px; } header { padding:14px; } table { font-size:0.7rem; } }
+        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+        /* 卡片通用样式 */
+        .card {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 18px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        h1 { font-size: 1.6rem; font-weight: 700; background: linear-gradient(135deg, #1e3c72, #2b4c7c); -webkit-background-clip: text; background-clip: text; color: transparent; letter-spacing: -0.3px; }
+        .btn {
+            padding: 8px 18px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        .btn-primary { background: #2563eb; color: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .btn-primary:hover { background: #1d4ed8; transform: translateY(-1px); }
+        .btn-outline { background: white; border: 1px solid #cbd5e1; color: #1e40af; }
+        .btn-outline:hover { background: #eff6ff; border-color: #3b82f6; }
+        .upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 28px;
+            background: #fefefe;
+            text-align: center;
+            padding: 36px 20px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .upload-zone.drag-over { border-color: #3b82f6; background: #eef4ff; }
+        .stats-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-pill {
+            background: #f8fafc;
+            border-radius: 40px;
+            padding: 8px 20px;
+            border: 1px solid #e2e8f0;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+        .stat-number { font-size: 1.7rem; font-weight: 800; margin-right: 6px; color: #0f172a; }
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-left: 4px solid #3b82f6;
+            padding-left: 12px;
+        }
+        .table-wrapper {
+            overflow-x: auto;
+            border-radius: 18px;
+            border: 1px solid #eef2f6;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            min-width: 800px;
+        }
+        th {
+            background: #f1f5f9;
+            padding: 12px 8px;
+            font-weight: 700;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+        td {
+            padding: 10px 6px;
+            border-bottom: 1px solid #ecf3f9;
+            text-align: center;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-weight: 700;
+            font-size: 0.7rem;
+        }
+        .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .badge-warning { background: #fff3e3; color: #b45309; }
+        .badge-normal { background: #e0f2fe; color: #0c4a6e; }
+        .trend-badge {
+            cursor: pointer;
+            font-weight: 600;
+            background: #f1f5f9;
+            padding: 3px 8px;
+            border-radius: 24px;
+            font-size: 0.7rem;
+        }
+        .highlight-fault { background: #fff0f0 !important; box-shadow: inset 0 0 0 2px #fecaca; border-radius: 12px; }
+        .highlight-warning { background: #fffbeb !important; }
+        .threshold-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+            gap: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .threshold-item {
+            background: #f9fafb;
+            border-radius: 16px;
+            padding: 8px 12px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+        }
+        .threshold-item input { width: 64px; padding: 5px; border-radius: 10px; border: 1px solid #cbd5e1; text-align: center; }
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(2px);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .modal {
+            background: white; border-radius: 32px; width: 90%; max-width: 1100px; max-height: 85vh;
+            overflow-y: auto; padding: 24px; position: relative;
+        }
+        .modal-close {
+            position: absolute; right: 20px; top: 18px; font-size: 24px; cursor: pointer; background: none; border: none;
+        }
+        .chart-container { height: 380px; margin-top: 16px; }
+        .insight-bar {
+            background: #eef2ff;
+            border-radius: 28px;
+            padding: 12px 20px;
+            margin: 12px 0;
+            font-size: 0.85rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 24px;
+            align-items: baseline;
+        }
+        .hidden { display: none !important; }
+        @media (max-width: 700px) { .container { padding: 12px; } .stat-number { font-size: 1.3rem; } }
     </style>
 </head>
 <body>
 <div class="container">
-    <header>
-        <h1>📊 风机状态监控 v3.1 <span>精确阈值</span></h1>
-        <div>
+    <header class="card">
+        <h1>🌬️ 风机状态监控 v5.0 · 智能统计仪表</h1>
+        <div style="display: flex; gap: 8px;">
             <button class="btn btn-outline" onclick="toggleThresholdPanel()">⚙️ 阈值配置</button>
-            <button class="btn btn-outline" onclick="resetAllThresholds()">🔄 重置为默认阈值</button>
-            <button class="btn btn-danger hidden" id="btnClear" onclick="clearAll()">🗑️ 清除</button>
+            <button class="btn btn-outline" onclick="resetAllThresholds()">🔄 重置阈值</button>
+            <button class="btn btn-outline hidden" id="btnClear" onclick="clearAll()">🗑️ 清除</button>
         </div>
     </header>
 
     <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
-        <div class="icon">📂</div>
-        <p><strong>点击或拖拽 Excel 文件到这里</strong></p>
-        <p>支持 .xlsx / .xls，自动识别所有数据列</p>
-        <p id="fileNameDisplay" style="color:var(--primary);font-weight:600;"></p>
+        <div style="font-size: 2.5rem;">📂</div>
+        <p><strong>点击或拖拽 Excel 文件 (.xlsx, .xls)</strong></p>
+        <p id="fileNameDisplay" style="color:#2563eb; font-weight:500;"></p>
         <input type="file" id="fileInput" accept=".xlsx,.xls" hidden onchange="handleFile(event)">
     </div>
 
     <div class="card hidden" id="thresholdCard">
-        <div class="section-title">📏 动态测点阈值配置（基于您提供的精确阈值）</div>
-        <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:10px;">每个测点可独立调整上下限预警/故障值。未设置的项不生效。</p>
+        <div class="section-title">📏 测点阈值配置 (预警/故障)</div>
         <div class="threshold-grid" id="thresholdGrid"></div>
-        <button class="btn btn-primary" style="margin-top:12px;" onclick="reanalyze()">🔄 应用阈值并重新分析</button>
+        <button class="btn btn-primary" style="margin-top: 12px;" onclick="reanalyze()">🔄 应用并重新分析</button>
     </div>
 
-    <div class="stats-row hidden" id="statsRow">
-        <div class="stat-card total"><div class="number" id="statTotal">0</div><div class="label">总机组</div></div>
-        <div class="stat-card normal"><div class="number" id="statNormal">0</div><div class="label">✅ 正常</div></div>
-        <div class="stat-card warning"><div class="number" id="statWarning">0</div><div class="label">⚠️ 预警</div></div>
-        <div class="stat-card danger"><div class="number" id="statDanger">0</div><div class="label">🚨 故障</div></div>
-        <div class="stat-card"><div class="number" id="statRising">0</div><div class="label">📈 趋势升高</div></div>
+    <!-- 统计卡片区 (新增平均值/众值精华) -->
+    <div class="hidden" id="statsRowMain">
+        <div class="stats-grid" id="statisticalSummary"></div>
     </div>
 
+    <!-- 机组状态总览 -->
     <div class="card hidden" id="resultCard">
-        <div class="section-title">📋 综合状态列表</div>
+        <div class="section-title">📋 机组综合状态 · 异常机组高亮显示</div>
         <div class="table-wrapper">
-            <table><thead><tr><th>机组</th><th>状态</th><th>最高告警测点</th><th>当前值</th><th>阈值信息</th><th>趋势</th><th>建议</th></tr></thead><tbody id="resultBody"></tbody></table>
+            <table>
+                <thead>
+                    <tr>
+                        <th>机组</th><th>状态</th><th>最高告警测点</th><th>当前值</th><th>阈值信息</th><th>趋势</th><th>建议</th>
+                    </tr>
+                </thead>
+                <tbody id="resultBody"></tbody>
+            </table>
         </div>
+        <div class="insight-bar hidden" id="anomalyInsight"></div>
     </div>
 
     <div class="card hidden" id="detailCard">
-        <div class="section-title">🔍 各机组详细数值（点击上方行快速定位）</div>
-        <div id="detailContent" style="max-height:400px;overflow-y:auto;"></div>
+        <div class="section-title">🔍 各机组详细数值 (含全量测点)</div>
+        <div id="detailContent" style="max-height: 420px; overflow-y: auto;"></div>
+    </div>
+</div>
+
+<!-- 趋势模态框 -->
+<div class="modal-overlay hidden" id="chartModal" onclick="if(event.target===this)closeChartModal()">
+    <div class="modal">
+        <button class="modal-close" onclick="closeChartModal()">✕</button>
+        <h3 id="chartTitle">趋势分析</h3>
+        <div style="margin: 12px 0;"><label>📈 选择测点：</label><select id="chartColumnSelect" onchange="redrawChart()"></select></div>
+        <div class="chart-container"><canvas id="trendChart"></canvas></div>
     </div>
 </div>
 
 <script>
-    // 全局状态
-    let allData = {};
+    // ---------- 全局变量 ----------
+    let allData = {};           // { "机组名": [ { ts, row }, ... ] }
     let allColumns = [];
     let thresholds = {};
-    let analysisResult = [];
+    let analysisResult = [];    // 机组分析结果
+    let chartInstance = null;
+    let currentChartTurbine = '';
 
-    // 基于您提供的表格，精确默认阈值（零下限表示不触发告警）
+    // ---------- 默认阈值库 (完全保留原版逻辑) ----------
     const keywordDefaults = [
-        { keywords: ['齿轮箱HS1轴承温度'], highWarn: 90, highFault: 95, lowWarn: null, lowFault: null },
-        { keywords: ['齿轮箱HS2轴承温度'], highWarn: 90, highFault: 95, lowWarn: null, lowFault: null },
-        { keywords: ['主轴温度1'], highWarn: 65, highFault: 70, lowWarn: null, lowFault: null },
-        { keywords: ['主轴温度2'], highWarn: 65, highFault: 70, lowWarn: null, lowFault: null },
-        { keywords: ['齿轮箱油池温度'], highWarn: 75, highFault: 80, lowWarn: null, lowFault: null },
         { keywords: ['发电机绕组u1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
         { keywords: ['发电机绕组u2温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
         { keywords: ['发电机绕组v1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
@@ -149,274 +278,330 @@
         { keywords: ['发电机冷却液进口压力'], highWarn: 8, highFault: 8, lowWarn: 1.2, lowFault: 0.6 },
         { keywords: ['变压器冷却液进口压力'], highWarn: 5.5, highFault: 6, lowWarn: 1, lowFault: 0.6 },
         { keywords: ['变流器入水口压力反馈'], highWarn: 5.5, highFault: 6, lowWarn: 1, lowFault: 0.8 },
-        // 通用回退规则（当测点名不匹配以上精确项时使用）
-        { keywords: ['温度','绕组','轴承','油池','油温','变压器','主轴','轮毂','机舱','塔基','控制柜','变流器','IGBT','辅助变压器','冷却液进口','冷却空气','冷却水'], highWarn: 70, highFault: 85, lowWarn: null, lowFault: null },
-        { keywords: ['压力','液压'], highWarn: 20, highFault: 25, lowWarn: 5, lowFault: 3 },
+        { keywords: ['齿轮箱HS1轴承温度'], highWarn: 90, highFault: 95, lowWarn: null, lowFault: null },
+        { keywords: ['齿轮箱HS2轴承温度'], highWarn: 90, highFault: 95, lowWarn: null, lowFault: null },
+        { keywords: ['主轴温度1'], highWarn: 65, highFault: 70, lowWarn: null, lowFault: null },
+        { keywords: ['主轴温度2'], highWarn: 65, highFault: 70, lowWarn: null, lowFault: null },
+        { keywords: ['齿轮箱油池温度'], highWarn: 75, highFault: 80, lowWarn: null, lowFault: null },
     ];
 
-    function loadThresholdsFromStorage() {
-        const saved = localStorage.getItem('turbine_thresholds_v3.1');
-        if (saved) { try { thresholds = JSON.parse(saved); } catch { thresholds = {}; } }
-    }
-    function saveThresholds() { localStorage.setItem('turbine_thresholds_v3.1', JSON.stringify(thresholds)); }
-
-    function getDefaultThreshold(colName) {
-        const name = colName.toLowerCase();
-        // 按顺序匹配，精确规则优先
-        for (let rule of keywordDefaults) {
-            for (let kw of rule.keywords) {
-                if (name.includes(kw.toLowerCase())) {
-                    return {
-                        warnHigh: rule.highWarn,
-                        faultHigh: rule.highFault,
-                        warnLow: rule.lowWarn,
-                        faultLow: rule.lowFault,
-                    };
-                }
+    function getDefault(col) {
+        const n = col.toLowerCase();
+        for (let r of keywordDefaults) {
+            for (let k of r.keywords) {
+                if (n.includes(k.toLowerCase())) return { warnHigh: r.highWarn, faultHigh: r.highFault, warnLow: r.lowWarn, faultLow: r.lowFault };
             }
         }
         return null;
     }
 
-    function hasAnyThreshold(cfg) {
-        return cfg && (cfg.warnHigh !== undefined || cfg.faultHigh !== undefined || cfg.warnLow !== undefined || cfg.faultLow !== undefined);
+    function loadThresholds() {
+        const s = localStorage.getItem('turbine_v5');
+        if (s) try { thresholds = JSON.parse(s); } catch { thresholds = {}; }
     }
+    function saveThresholds() { localStorage.setItem('turbine_v5', JSON.stringify(thresholds)); }
 
-    function getVal(obj, key) {
-        const v = obj[key];
-        return (v !== undefined && v !== null && !isNaN(v)) ? v : undefined;
-    }
-
-    function renderThresholdPanel() {
-        const grid = document.getElementById('thresholdGrid');
-        grid.innerHTML = allColumns.map(col => {
-            const cfg = thresholds[col] || {};
-            const def = getDefaultThreshold(col);
-            const wh = getVal(cfg, 'warnHigh') ?? (def ? def.warnHigh : '');
-            const fh = getVal(cfg, 'faultHigh') ?? (def ? def.faultHigh : '');
-            const wl = getVal(cfg, 'warnLow') ?? (def ? def.warnLow : '');
-            const fl = getVal(cfg, 'faultLow') ?? (def ? def.faultLow : '');
-            return `
-            <div class="threshold-item">
-                <label title="${col}">${col}</label>
-                <div class="group"><span>↑预警</span><input type="number" step="any" value="${wh}" placeholder="-" onchange="updateColThreshold('${col.replace(/'/g,"\\'")}','warnHigh',this.value)"></div>
-                <div class="group"><span>↑故障</span><input type="number" step="any" value="${fh}" placeholder="-" onchange="updateColThreshold('${col.replace(/'/g,"\\'")}','faultHigh',this.value)"></div>
-                <div class="group"><span>↓预警</span><input type="number" step="any" value="${wl}" placeholder="-" onchange="updateColThreshold('${col.replace(/'/g,"\\'")}','warnLow',this.value)"></div>
-                <div class="group"><span>↓故障</span><input type="number" step="any" value="${fl}" placeholder="-" onchange="updateColThreshold('${col.replace(/'/g,"\\'")}','faultLow',this.value)"></div>
-            </div>`;
-        }).join('');
-    }
-
-    function updateColThreshold(col, field, value) {
-        const v = parseFloat(value);
-        if (!thresholds[col]) thresholds[col] = {};
-        if (isNaN(v)) {
-            delete thresholds[col][field];
-        } else {
-            thresholds[col][field] = v;
+    // 计算机组所有测点 (最新一行) 的均值 & 众值 (mode)
+    function computeStatsForTurbine(turbineEntry) {
+        const latestRow = turbineEntry.entries[turbineEntry.entries.length - 1].row;
+        const numericValues = [];
+        for (let col of allColumns) {
+            let v = parseFloat(latestRow[col]);
+            if (!isNaN(v)) numericValues.push(v);
         }
-        if (!hasAnyThreshold(thresholds[col])) delete thresholds[col];
-        saveThresholds();
-    }
-
-    function resetAllThresholds() {
-        if (!confirm('确定清除所有阈值并恢复为默认精确值吗？')) return;
-        thresholds = {};
-        allColumns.forEach(col => {
-            const def = getDefaultThreshold(col);
-            if (def) thresholds[col] = { ...def };
+        if (numericValues.length === 0) return { mean: '—', mode: '—' };
+        const mean = numericValues.reduce((a,b) => a+b,0) / numericValues.length;
+        // 众值: 频率最高的数值 (保留两位小数比较)
+        const freq = new Map();
+        numericValues.forEach(v => {
+            let key = Math.round(v * 100) / 100;
+            freq.set(key, (freq.get(key)||0) + 1);
         });
-        saveThresholds();
-        renderThresholdPanel();
-        if (Object.keys(allData).length > 0) analyzeData();
+        let maxFreq = 0, modeVal = null;
+        for (let [val, cnt] of freq.entries()) {
+            if (cnt > maxFreq) { maxFreq = cnt; modeVal = val; }
+        }
+        return { mean: mean.toFixed(2), mode: (modeVal !== null ? modeVal.toFixed(2) : '—') };
     }
 
-    function toggleThresholdPanel() {
-        document.getElementById('thresholdCard').classList.toggle('hidden');
-    }
-
-    function handleFile(event) {
-        const file = event.target.files[0];
-        if (file) processFile(file);
-    }
-    function processFile(file) {
-        document.getElementById('fileNameDisplay').textContent = '📄 ' + file.name;
-        const reader = new FileReader();
-        reader.onload = e => {
-            const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-            const ws = wb.Sheets[wb.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(ws, {defval:null});
-            parseData(rows);
-        };
-        reader.readAsArrayBuffer(file);
-    }
-
-    function parseData(rows) {
-        if (!rows.length) return alert('无有效数据');
-        const excludeCols = ['机组名称','时间'];
-        allColumns = Object.keys(rows[0]).filter(k => !excludeCols.includes(k));
-        const map = {};
-        rows.forEach(row => {
-            const name = row['机组名称'];
-            const timeStr = row['时间'];
-            if (!name || !timeStr) return;
-            let ts;
-            try { ts = new Date(timeStr.replace(' ','T')); if (isNaN(ts.getTime())) throw 0; }
-            catch {
-                const p = timeStr.split(' '), d = p[0].split('-'), t = p[1] ? p[1].split(':') : [0,0,0];
-                ts = new Date(+d[0], +d[1]-1, +d[2], +t[0]||0, +t[1]||0, +t[2]||0);
+    // 全局各测点均值/众值（用于综合看板）
+    function computeGlobalColumnStats() {
+        if (!allData || Object.keys(allData).length === 0) return {};
+        const colValues = {};
+        allColumns.forEach(col => { colValues[col] = []; });
+        for (let turbine of Object.values(allData)) {
+            const latestRow = turbine[turbine.length-1].row;
+            for (let col of allColumns) {
+                let v = parseFloat(latestRow[col]);
+                if (!isNaN(v)) colValues[col].push(v);
             }
-            if (!map[name]) map[name] = [];
-            map[name].push({ts, row});
-        });
-        Object.keys(map).forEach(n => map[n].sort((a,b)=>a.ts-b.ts));
-        allData = map;
-        loadThresholdsFromStorage();
-        let changed = false;
-        allColumns.forEach(col => {
-            if (!thresholds[col]) {
-                const def = getDefaultThreshold(col);
-                if (def) { thresholds[col] = {...def}; changed = true; }
-            }
-        });
-        if (changed) saveThresholds();
-        renderThresholdPanel();
-        document.getElementById('thresholdCard').classList.remove('hidden');
-        analyzeData();
+        }
+        const result = {};
+        for (let col of allColumns) {
+            const arr = colValues[col];
+            if (arr.length === 0) { result[col] = { mean: '—', mode: '—' }; continue; }
+            const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+            const freq = new Map();
+            arr.forEach(v => { let key = Math.round(v*100)/100; freq.set(key, (freq.get(key)||0)+1); });
+            let maxCnt = 0, modeVal = null;
+            for (let [val, cnt] of freq.entries()) if (cnt > maxCnt) { maxCnt = cnt; modeVal = val; }
+            result[col] = { mean: mean.toFixed(2), mode: modeVal !== null ? modeVal.toFixed(2) : '—' };
+        }
+        return result;
     }
 
-    function evaluatePoint(val, cfg) {
-        if (!cfg || isNaN(val)) return {level:'normal', direction:null};
-        const fh = getVal(cfg, 'faultHigh');
-        const fl = getVal(cfg, 'faultLow');
-        const wh = getVal(cfg, 'warnHigh');
-        const wl = getVal(cfg, 'warnLow');
-        if (fh !== undefined && val >= fh) return {level:'fault', direction:'high'};
-        if (fl !== undefined && val <= fl) return {level:'fault', direction:'low'};
-        if (wh !== undefined && val >= wh) return {level:'warning', direction:'high'};
-        if (wl !== undefined && val <= wl) return {level:'warning', direction:'low'};
-        return {level:'normal', direction:null};
+    // 渲染统计卡片: 全局平均值/众值 + 异常机组数量高亮
+    function renderStatisticalDashboard() {
+        const globalStats = computeGlobalColumnStats();
+        // 挑选前5个主要测点展示（避免拥挤）, 但展示关键信息+异常突出
+        const topCols = allColumns.slice(0, 8);
+        let statHtml = `<div class="stat-pill">📊 总机组数 <span class="stat-number">${Object.keys(allData).length}</span></div>`;
+        statHtml += `<div class="stat-pill">⚠️ 故障机组 <span class="stat-number" style="color:#dc2626;">${analysisResult.filter(r=>r.level==='fault').length}</span></div>`;
+        statHtml += `<div class="stat-pill">📈 预警机组 <span class="stat-number" style="color:#f97316;">${analysisResult.filter(r=>r.level==='warning').length}</span></div>`;
+        statHtml += `<div class="stat-pill">✅ 正常机组 <span class="stat-number">${analysisResult.filter(r=>r.level==='normal').length}</span></div>`;
+        statHtml += `<div class="stat-pill">📐 趋势上升 <span class="stat-number">${analysisResult.filter(r=>r.trend==='rising').length}</span></div>`;
+        
+        // 增加重要测点的全局均值/众值卡片
+        statHtml += `<div style="width:100%; margin-top:6px; display:flex; flex-wrap:wrap; gap:12px; border-top:1px solid #e2e8f0; padding-top:12px;">`;
+        for (let col of topCols) {
+            let st = globalStats[col] || { mean: '—', mode: '—' };
+            statHtml += `<div class="stat-pill" style="background:#f1f5f9;">📌 ${col}<br><span style="font-size:0.7rem;">均值: ${st.mean} / 众值: ${st.mode}</span></div>`;
+        }
+        statHtml += `</div>`;
+        document.getElementById('statisticalSummary').innerHTML = statHtml;
+        document.getElementById('statsRowMain').classList.remove('hidden');
+    }
+
+    // 异常突出显示 + 额外洞察
+    function renderAnomalyInsight() {
+        const faultList = analysisResult.filter(r => r.level === 'fault').map(r => r.name);
+        const warnList = analysisResult.filter(r => r.level === 'warning').map(r => r.name);
+        let insightHtml = '';
+        if (faultList.length > 0) insightHtml += `🚨 <strong>严重故障机组：</strong> ${faultList.join(', ')} &nbsp;&nbsp;`;
+        if (warnList.length > 0) insightHtml += `⚠️ <strong>预警机组：</strong> ${warnList.join(', ')}`;
+        if (!insightHtml) insightHtml = '✅ 所有机组运行平稳，无异常高亮项';
+        const insightDiv = document.getElementById('anomalyInsight');
+        insightDiv.innerHTML = insightHtml;
+        if (faultList.length > 0 || warnList.length > 0) insightDiv.classList.remove('hidden');
+        else insightDiv.classList.add('hidden');
+    }
+
+    // 评估等级
+    function hasAny(cfg) { return cfg && (cfg.warnHigh !== undefined || cfg.faultHigh !== undefined || cfg.warnLow !== undefined || cfg.faultLow !== undefined); }
+    function gv(obj, k) { const v = obj[k]; return (v !== undefined && v !== null && !isNaN(v)) ? v : undefined; }
+    function evaluate(val, cfg) {
+        if (!cfg || isNaN(val)) return { level: 'normal', direction: null };
+        const fh = gv(cfg, 'faultHigh'), fl = gv(cfg, 'faultLow'), wh = gv(cfg, 'warnHigh'), wl = gv(cfg, 'warnLow');
+        if (fh !== undefined && val >= fh) return { level: 'fault', direction: 'high' };
+        if (fl !== undefined && val <= fl) return { level: 'fault', direction: 'low' };
+        if (wh !== undefined && val >= wh) return { level: 'warning', direction: 'high' };
+        if (wl !== undefined && val <= wl) return { level: 'warning', direction: 'low' };
+        return { level: 'normal', direction: null };
     }
 
     function analyzeData() {
+        if (!Object.keys(allData).length) return;
         analysisResult = [];
-        const names = Object.keys(allData).sort();
-        names.forEach(name => {
-            const entries = allData[name];
-            const latest = entries[entries.length-1];
-            let worstLevel = 'normal', worstCol = '', worstVal = 0, worstDirection = null;
-            let worstThresholdInfo = '';
-            Object.keys(thresholds).forEach(col => {
+        for (let [name, entries] of Object.entries(allData)) {
+            const latest = entries[entries.length - 1];
+            let worstL = 'normal', worstC = '', worstV = 0, worstD = null, worstTI = '';
+            for (let col of allColumns) {
                 const cfg = thresholds[col];
-                if (!hasAnyThreshold(cfg)) return;
+                if (!hasAny(cfg)) continue;
                 const val = parseFloat(latest.row[col]);
-                if (isNaN(val)) return;
-                const result = evaluatePoint(val, cfg);
-                if (result.level === 'fault' && (worstLevel !== 'fault' || Math.abs(val) > Math.abs(worstVal))) {
-                    worstLevel = 'fault'; worstCol = col; worstVal = val; worstDirection = result.direction;
-                } else if (result.level === 'warning' && worstLevel !== 'fault' && (worstLevel !== 'warning' || Math.abs(val) > Math.abs(worstVal))) {
-                    worstLevel = 'warning'; worstCol = col; worstVal = val; worstDirection = result.direction;
+                if (isNaN(val)) continue;
+                const res = evaluate(val, cfg);
+                if (res.level === 'fault' && (worstL !== 'fault' || Math.abs(val) > Math.abs(worstV))) {
+                    worstL = 'fault'; worstC = col; worstV = val; worstD = res.direction;
+                } else if (res.level === 'warning' && worstL !== 'fault' && (worstL !== 'warning' || Math.abs(val) > Math.abs(worstV))) {
+                    worstL = 'warning'; worstC = col; worstV = val; worstD = res.direction;
                 }
-            });
-            if (worstCol) {
-                const cfg = thresholds[worstCol] || {};
+            }
+            if (worstC) {
+                const cfg = thresholds[worstC] || {};
                 const parts = [];
-                if (getVal(cfg,'warnHigh')!==undefined) parts.push(`↑预警${cfg.warnHigh}`);
-                if (getVal(cfg,'faultHigh')!==undefined) parts.push(`↑故障${cfg.faultHigh}`);
-                if (getVal(cfg,'warnLow')!==undefined) parts.push(`↓预警${cfg.warnLow}`);
-                if (getVal(cfg,'faultLow')!==undefined) parts.push(`↓故障${cfg.faultLow}`);
-                worstThresholdInfo = parts.join(' / ');
+                if (gv(cfg, 'warnHigh') !== undefined) parts.push(`↑预${cfg.warnHigh}`);
+                if (gv(cfg, 'faultHigh') !== undefined) parts.push(`↑故${cfg.faultHigh}`);
+                if (gv(cfg, 'warnLow') !== undefined) parts.push(`↓预${cfg.warnLow}`);
+                if (gv(cfg, 'faultLow') !== undefined) parts.push(`↓故${cfg.faultLow}`);
+                worstTI = parts.join(' / ');
             }
+            // 趋势 (基于最严重告警测点)
             let trend = 'stable', trendDetail = '';
-            if (worstCol && entries.length >= 2) {
-                const firstVal = parseFloat(entries[0].row[worstCol]);
-                const lastVal = parseFloat(latest.row[worstCol]);
+            if (worstC && entries.length >= 2) {
+                const firstVal = parseFloat(entries[0].row[worstC]);
+                const lastVal = parseFloat(latest.row[worstC]);
                 if (!isNaN(firstVal) && !isNaN(lastVal) && firstVal !== 0) {
-                    const change = lastVal - firstVal;
-                    const pct = (change / Math.abs(firstVal)) * 100;
-                    if (pct > 5 || change > 5) trend = 'rising';
-                    else if (pct < -5 || change < -5) trend = 'falling';
-                    trendDetail = `Δ ${change>=0?'+':''}${change.toFixed(2)} (${pct>=0?'+':''}${pct.toFixed(1)}%)`;
+                    const delta = lastVal - firstVal;
+                    const pct = (delta / Math.abs(firstVal)) * 100;
+                    if (pct > 5 || delta > 5) trend = 'rising';
+                    else if (pct < -5 || delta < -5) trend = 'falling';
+                    trendDetail = `Δ${delta>=0?'+':''}${delta.toFixed(2)} (${pct>=0?'+':''}${pct.toFixed(1)}%)`;
                 }
             }
-            analysisResult.push({ name, level:worstLevel, col:worstCol, value:worstVal, direction:worstDirection, thresholdInfo:worstThresholdInfo, trend, trendDetail, entries });
-        });
-        const order = {fault:0, warning:1, normal:2};
-        analysisResult.sort((a,b) => order[a.level]-order[b.level] || Math.abs(b.value) - Math.abs(a.value));
-        renderResults();
+            analysisResult.push({ name, level: worstL, col: worstC, value: worstV, direction: worstD, thresholdInfo: worstTI, trend, trendDetail, entries });
+        }
+        const order = { fault: 0, warning: 1, normal: 2 };
+        analysisResult.sort((a,b) => order[a.level] - order[b.level] || Math.abs(b.value) - Math.abs(a.value));
+        renderResultsAndDetails();
+        renderStatisticalDashboard();   // 展示全局/机组级统计
+        renderAnomalyInsight();
     }
 
-    function renderResults() {
-        const total = analysisResult.length;
-        const normal = analysisResult.filter(r=>r.level==='normal').length;
-        const warning = analysisResult.filter(r=>r.level==='warning').length;
-        const fault = analysisResult.filter(r=>r.level==='fault').length;
-        const rising = analysisResult.filter(r=>r.trend==='rising').length;
-        document.getElementById('statTotal').textContent = total;
-        document.getElementById('statNormal').textContent = normal;
-        document.getElementById('statWarning').textContent = warning;
-        document.getElementById('statDanger').textContent = fault;
-        document.getElementById('statRising').textContent = rising;
-        document.getElementById('statsRow').classList.remove('hidden');
-        document.getElementById('resultCard').classList.remove('hidden');
-        document.getElementById('detailCard').classList.remove('hidden');
-        document.getElementById('btnClear').classList.remove('hidden');
+    // 渲染表格 (异常高亮)
+    function renderResultsAndDetails() {
         const tbody = document.getElementById('resultBody');
-        tbody.innerHTML = analysisResult.map(r => {
-            let badge, action;
-            if (r.level === 'fault') { badge='<span class="badge badge-danger">🚨 故障</span>'; action='立即停机检查'; }
-            else if (r.level === 'warning') { badge='<span class="badge badge-warning">⚠️ 预警</span>'; action='加强监视，安排检修'; }
-            else { badge='<span class="badge badge-normal">✅ 正常</span>'; action='正常运行'; }
-            let trendBadge = r.trend==='rising' ? `<span class="badge badge-rising">📈 ${r.trendDetail||'升高'}</span>` :
-                            r.trend==='falling' ? '<span class="badge badge-falling">📉 降低</span>' : '<span class="badge badge-stable">➡️ 稳定</span>';
-            const directionStr = r.direction ? (r.direction==='high'?' (过高)':' (过低)') : '';
-            const colDisplay = r.col ? r.col + directionStr : '—';
-            const bg = r.level==='fault'?'#fef2f2': r.level==='warning'?'#fffbeb':'';
-            return `<tr style="background:${bg};cursor:pointer" onclick="scrollToDetail('${r.name}')">
-                <td><strong>${r.name}</strong></td><td>${badge}</td><td>${colDisplay}</td>
-                <td><strong>${r.value ? r.value.toFixed(2) : '—'}</strong></td>
-                <td style="font-size:0.75rem;">${r.thresholdInfo || '—'}</td>
-                <td>${trendBadge}</td><td>${action}</td></tr>`;
-        }).join('');
+        tbody.innerHTML = '';
+        for (let r of analysisResult) {
+            let badgeHtml = '', actionText = '';
+            if (r.level === 'fault') { badgeHtml = '<span class="badge badge-danger">🚨 故障</span>'; actionText = '立即停机检查'; }
+            else if (r.level === 'warning') { badgeHtml = '<span class="badge badge-warning">⚠️ 预警</span>'; actionText = '加强监视，安排检修'; }
+            else { badgeHtml = '<span class="badge badge-normal">✅ 正常</span>'; actionText = '正常运行'; }
+            const trendHtml = `<span class="trend-badge" onclick="openChart('${r.name.replace(/'/g, "\\'")}')">${r.trend==='rising'?'📈 上升':r.trend==='falling'?'📉 下降':'➡️ 稳定'} ${r.trendDetail||''}</span>`;
+            const dirHint = r.direction ? (r.direction==='high'?'过高':'过低') : '';
+            const valueStr = r.value ? r.value.toFixed(2) : '—';
+            // 高亮背景行
+            let rowClass = '';
+            if (r.level === 'fault') rowClass = 'highlight-fault';
+            else if (r.level === 'warning') rowClass = 'highlight-warning';
+            const tr = document.createElement('tr');
+            tr.className = rowClass;
+            tr.innerHTML = `
+                <td><strong>${r.name}</strong></td>
+                <td>${badgeHtml}</td>
+                <td>${r.col || '—'} ${dirHint}</td>
+                <td><strong>${valueStr}</strong></td>
+                <td style="font-size:0.7rem;">${r.thresholdInfo || '—'}</td>
+                <td>${trendHtml}</td>
+                <td>${actionText}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+        // 详细数值区域 (包含机组均值&众值)
         const detailDiv = document.getElementById('detailContent');
-        detailDiv.innerHTML = analysisResult.map(r => {
-            const items = allColumns.map(col => {
+        detailDiv.innerHTML = '';
+        for (let r of analysisResult) {
+            const stats = computeStatsForTurbine(r); // 最新一行所有数值的均值众值
+            const itemsHtml = allColumns.map(col => {
                 const val = parseFloat(r.entries[r.entries.length-1].row[col]);
                 if (isNaN(val)) return '';
                 const cfg = thresholds[col];
                 let style = '';
-                if (cfg && hasAnyThreshold(cfg)) {
-                    const result = evaluatePoint(val, cfg);
-                    if (result.level === 'fault') style = 'color:#dc2626;font-weight:700;';
-                    else if (result.level === 'warning') style = 'color:#d97706;font-weight:600;';
+                if (cfg && hasAny(cfg)) {
+                    const ev = evaluate(val, cfg);
+                    if (ev.level === 'fault') style = 'color:#dc2626; font-weight:800; background:#fee2e2; padding:2px 6px; border-radius:12px;';
+                    else if (ev.level === 'warning') style = 'color:#d97706; font-weight:700; background:#fff3e3; padding:2px 6px; border-radius:12px;';
                 }
-                return `<span style="${style}margin:3px 10px;display:inline-block;font-size:0.78rem;">${col}: <strong>${val.toFixed(2)}</strong></span>`;
+                return `<span style="${style} display:inline-block; margin:4px 8px; font-size:0.75rem;">${col}: <strong>${val.toFixed(2)}</strong></span>`;
             }).filter(Boolean).join('');
-            return `<div id="detail-${r.name}" style="padding:10px;border-bottom:1px solid #eee;"><strong>${r.name}</strong><div style="margin-top:4px;">${items||'无数据'}</div></div>`;
+            const meanModeHtml = `<div style="margin:6px 0 0 12px; font-size:0.7rem; background:#eef2ff; display:inline-block; padding:3px 12px; border-radius:20px;">📊 该机组均值: ${stats.mean} &nbsp;|&nbsp; 📌 众值: ${stats.mode}</div>`;
+            const block = document.createElement('div');
+            block.style.padding = '12px'; block.style.borderBottom = '1px solid #e9edf2';
+            block.innerHTML = `<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;"><strong>🔹 ${r.name}</strong> ${meanModeHtml}</div><div style="margin-top:8px;">${itemsHtml || '无有效数值'}</div>`;
+            detailDiv.appendChild(block);
+        }
+        document.getElementById('resultCard').classList.remove('hidden');
+        document.getElementById('detailCard').classList.remove('hidden');
+        document.getElementById('btnClear').classList.remove('hidden');
+    }
+
+    // ---------- UI绑定 ----------
+    function renderThresholdPanel() {
+        const grid = document.getElementById('thresholdGrid');
+        grid.innerHTML = allColumns.map(col => {
+            const c = thresholds[col] || {};
+            const d = getDefault(col);
+            const wh = c.warnHigh ?? d?.warnHigh ?? '';
+            const fh = c.faultHigh ?? d?.faultHigh ?? '';
+            const wl = c.warnLow ?? d?.warnLow ?? '';
+            const fl = c.faultLow ?? d?.faultLow ?? '';
+            return `<div class="threshold-item"><label style="min-width:140px;">${col}</label>
+                <div class="group">↑预<input type="number" step="any" value="${wh}" onchange="upd('${col.replace(/'/g,"\\'")}','warnHigh',this.value)"></div>
+                <div class="group">↑故<input type="number" step="any" value="${fh}" onchange="upd('${col.replace(/'/g,"\\'")}','faultHigh',this.value)"></div>
+                <div class="group">↓预<input type="number" step="any" value="${wl}" onchange="upd('${col.replace(/'/g,"\\'")}','warnLow',this.value)"></div>
+                <div class="group">↓故<input type="number" step="any" value="${fl}" onchange="upd('${col.replace(/'/g,"\\'")}','faultLow',this.value)"></div></div>`;
         }).join('');
     }
+    window.upd = function(col, field, val) {
+        if (!thresholds[col]) thresholds[col] = {};
+        const num = parseFloat(val);
+        isNaN(num) ? delete thresholds[col][field] : thresholds[col][field] = num;
+        if (Object.keys(thresholds[col]).length === 0) delete thresholds[col];
+        saveThresholds();
+    };
+    function resetAllThresholds() { if (!confirm('重置所有阈值为默认值？')) return; thresholds = {}; allColumns.forEach(c => { const d = getDefault(c); if (d) thresholds[c] = { ...d }; }); saveThresholds(); renderThresholdPanel(); if (Object.keys(allData).length) analyzeData(); }
+    function toggleThresholdPanel() { document.getElementById('thresholdCard').classList.toggle('hidden'); }
+    function reanalyze() { if (Object.keys(allData).length) analyzeData(); else alert('请先上传数据'); }
+    function clearAll() { allData = {}; allColumns = []; analysisResult = []; document.getElementById('statsRowMain').classList.add('hidden'); document.getElementById('resultCard').classList.add('hidden'); document.getElementById('detailCard').classList.add('hidden'); document.getElementById('btnClear').classList.add('hidden'); document.getElementById('fileNameDisplay').innerText = ''; }
 
-    function scrollToDetail(name) {
-        const el = document.getElementById('detail-'+name);
-        if (el) { el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.background='#fffde7'; setTimeout(()=>el.style.background='',2000); }
+    // Excel 解析
+    function handleFile(e) { const f = e.target.files[0]; if (f) processFile(f); }
+    function processFile(file) {
+        document.getElementById('fileNameDisplay').textContent = '📄 ' + file.name;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+            if (!rows.length) return alert('Excel 无数据');
+            allColumns = Object.keys(rows[0]).filter(k => !['机组名称', '时间'].includes(k));
+            const map = {};
+            rows.forEach(row => {
+                const name = row['机组名称'], timeStr = row['时间'];
+                if (!name || !timeStr) return;
+                let ts; try { ts = new Date(timeStr.replace(' ', 'T')); if (isNaN(ts)) throw 0; } catch { const parts = timeStr.split(/[ :\-]/); ts = new Date(parts[0], parts[1]-1, parts[2], parts[3]||0, parts[4]||0, parts[5]||0); }
+                if (!map[name]) map[name] = [];
+                map[name].push({ ts, row });
+            });
+            for (let n in map) map[n].sort((a,b)=>a.ts - b.ts);
+            allData = map;
+            loadThresholds();
+            let changed = false;
+            allColumns.forEach(col => { if (!thresholds[col]) { const d = getDefault(col); if (d) { thresholds[col] = { ...d }; changed = true; } } });
+            if (changed) saveThresholds();
+            renderThresholdPanel();
+            document.getElementById('thresholdCard').classList.remove('hidden');
+            analyzeData();
+        };
+        reader.readAsArrayBuffer(file);
     }
 
-    function reanalyze() { if (Object.keys(allData).length) analyzeData(); else alert('请先上传数据文件'); }
-    function clearAll() {
-        allData = {}; analysisResult = [];
-        document.getElementById('statsRow').classList.add('hidden');
-        document.getElementById('resultCard').classList.add('hidden');
-        document.getElementById('detailCard').classList.add('hidden');
-        document.getElementById('btnClear').classList.add('hidden');
-        document.getElementById('fileNameDisplay').textContent = '';
-    }
+    // 图表相关
+    window.openChart = function(turbineName) {
+        currentChartTurbine = turbineName;
+        document.getElementById('chartModal').classList.remove('hidden');
+        document.getElementById('chartTitle').innerHTML = `${turbineName} · 趋势曲线`;
+        const select = document.getElementById('chartColumnSelect');
+        select.innerHTML = allColumns.map(c => `<option value="${c}">${c}</option>`).join('');
+        const res = analysisResult.find(r => r.name === turbineName);
+        if (res && res.col) select.value = res.col;
+        redrawChart();
+    };
+    window.closeChartModal = function() { document.getElementById('chartModal').classList.add('hidden'); if (chartInstance) { chartInstance.destroy(); chartInstance = null; } };
+    window.redrawChart = function() {
+        if (!currentChartTurbine) return;
+        const col = document.getElementById('chartColumnSelect').value;
+        const entries = allData[currentChartTurbine];
+        if (!entries) return;
+        const cfg = thresholds[col] || {};
+        const labels = entries.map(e => `${e.ts.getMonth()+1}/${e.ts.getDate()} ${e.ts.getHours()}:${String(e.ts.getMinutes()).padStart(2,'0')}`);
+        const values = entries.map(e => parseFloat(e.row[col]));
+        const datasets = [{ label: col, data: values, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.05)', fill: true, tension: 0.2, pointRadius: 2 }];
+        const addLine = (val, color, label) => { if (val !== undefined && !isNaN(val)) datasets.push({ label, data: Array(values.length).fill(val), borderColor: color, borderDash: [6,4], pointRadius: 0, fill: false }); };
+        addLine(gv(cfg, 'faultHigh'), '#dc2626', '故障上限'); addLine(gv(cfg, 'warnHigh'), '#f97316', '预警上限');
+        addLine(gv(cfg, 'warnLow'), '#f97316', '预警下限'); addLine(gv(cfg, 'faultLow'), '#dc2626', '故障下限');
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        if (chartInstance) chartInstance.destroy();
+        chartInstance = new Chart(ctx, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false } });
+    };
 
-    document.addEventListener('DOMContentLoaded', ()=>{
+    // 拖拽
+    document.addEventListener('DOMContentLoaded', () => {
         const zone = document.getElementById('uploadZone');
-        zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over');});
-        zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
-        zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-over');const f=e.dataTransfer.files[0];if(f)processFile(f);});
-        loadThresholdsFromStorage();
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+        zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) processFile(f); });
+        loadThresholds();
     });
 </script>
 </body>
