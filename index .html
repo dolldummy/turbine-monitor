@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>风机智能监控 v12.1 · 全屏趋势对比</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Inter', system-ui, sans-serif;
+            background: #f0f4f9;
+            color: #0f172a;
+            line-height: 1.5;
+        }
+        .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+        .card {
+            background: white;
+            border-radius: 24px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        h1 {
+            font-size: 1.6rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #0f2b3d, #1e4a76);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .btn {
+            padding: 8px 18px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-outline { background: white; border: 1px solid #cbd5e1; color: #1e40af; }
+        .btn-outline:hover { background: #eff6ff; }
+        .btn-copy { background: #10b981; color: white; }
+        .btn-copy:hover { background: #059669; }
+        .btn-fullscreen { background: #8b5cf6; color: white; }
+        .btn-fullscreen:hover { background: #7c3aed; }
+        .upload-zone {
+            border: 2px dashed #cbd5e1;
+            border-radius: 32px;
+            background: #fefefe;
+            text-align: center;
+            padding: 32px 20px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .upload-zone.drag-over { border-color: #3b82f6; background: #eef4ff; }
+        .stats-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+        .stat-pill { background: #f8fafc; border-radius: 32px; padding: 6px 18px; border: 1px solid #e2e8f0; font-weight: 600; font-size: 0.85rem; display: inline-flex; align-items: center; gap: 6px; }
+        .stat-number { font-size: 1.5rem; font-weight: 800; margin-right: 4px; }
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-left: 4px solid #3b82f6;
+            padding-left: 14px;
+        }
+        .table-wrapper { overflow-x: auto; border-radius: 20px; border: 1px solid #eef2f6; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; min-width: 800px; }
+        th { background: #f1f5f9; padding: 12px 8px; font-weight: 700; position: sticky; top: 0; }
+        td { padding: 10px 6px; border-bottom: 1px solid #ecf3f9; text-align: center; }
+        .badge {
+            display: inline-block; padding: 4px 12px; border-radius: 30px; font-weight: 700; font-size: 0.7rem;
+        }
+        .badge-danger { background: #fee2e2; color: #b91c1c; }
+        .badge-warning { background: #fff3e3; color: #b45309; }
+        .badge-normal { background: #e0f2fe; color: #0c4a6e; }
+        .trend-up { background: #fee2e2; color: #dc2626; }
+        .trend-down { background: #e0f2fe; color: #2563eb; }
+        .trend-stable { background: #e2e8f0; color: #475569; }
+        .highlight-fault { background: #fff0f0 !important; }
+        .highlight-warning { background: #fffbeb !important; }
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .modal {
+            background: white; border-radius: 32px; width: 92%; max-width: 1300px; max-height: 85vh;
+            overflow-y: auto; padding: 24px; position: relative;
+        }
+        
+        /* ========== 全屏趋势弹窗样式 ========== */
+        .modal-fullscreen {
+            width: 98vw !important;
+            max-width: 98vw !important;
+            height: 94vh !important;
+            max-height: 94vh !important;
+            border-radius: 20px !important;
+            padding: 16px 20px !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        .modal-fullscreen .modal-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-fullscreen .chart-container {
+            flex: 1;
+            min-height: 0;
+            height: auto;
+        }
+        .modal-fullscreen .multi-selector {
+            flex-shrink: 0;
+        }
+        
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #eef2ff; padding-bottom: 12px; flex-shrink: 0; }
+        .modal-title { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .modal-close { background: none; border: none; font-size: 28px; cursor: pointer; padding: 0 8px; }
+        .modal-close:hover { color: #ef4444; }
+        .threshold-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; max-height: 55vh; overflow-y: auto; }
+        .threshold-item { background: #f9fafb; border-radius: 18px; padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.75rem; }
+        .threshold-item input { width: 68px; padding: 5px; border-radius: 12px; border: 1px solid #cbd5e1; text-align: center; }
+        .chart-container { height: 380px; margin-top: 16px; }
+        .multi-selector { background: #f8fafc; padding: 12px; border-radius: 28px; margin: 12px 0; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .deviation-item { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
+        .summary-text { background: #f1f5f9; padding: 12px 16px; border-radius: 20px; margin-bottom: 16px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+        .insight-bar { background: #eef2ff; border-radius: 28px; padding: 10px 20px; margin-top: 12px; }
+        .action-bar { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+        .hidden { display: none !important; }
+        
+        /* 机组选择标签样式 */
+        .turbine-check-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f5f9;
+            padding: 6px 14px;
+            border-radius: 32px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: 0.2s;
+        }
+        .turbine-check-label:hover { background: #e2e8f0; }
+        .turbine-check-label input { margin-right: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header class="card">
+        <h1>🌬️ 风机智能监控 v12.1 · 全屏趋势对比</h1>
+        <div>
+            <button class="btn btn-outline" onclick="openThresholdModal()">⚙️ 阈值配置</button>
+            <button class="btn btn-outline" onclick="resetAllThresholds()">🔄 重置阈值</button>
+            <button class="btn btn-outline hidden" id="btnClear" onclick="clearAll()">🗑️ 清除</button>
+        </div>
+    </header>
+
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div style="font-size: 2.5rem;">📂</div>
+        <p><strong>点击或拖拽 Excel 文件 (.xlsx, .xls)</strong></p>
+        <p style="font-size:0.8rem; color:#64748b;">需要包含「机组名称」「时间」列以及各测点数据列</p>
+        <p id="fileNameDisplay" style="color:#2563eb; font-weight:500; margin-top:8px;"></p>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" hidden>
+    </div>
+
+    <div class="card hidden" id="statsRowMain">
+        <div class="stats-grid" id="statisticalSummary"></div>
+        <div class="action-bar">
+            <button class="btn btn-primary" onclick="openAbnormalModal()">⚠️ 异常机组列表</button>
+            <button class="btn btn-primary" onclick="openCompareModal()">⚖️ 同指标对比</button>
+            <button class="btn btn-primary" onclick="openDeviationModal()">📊 全场偏差总结</button>
+            <button class="btn btn-primary" onclick="openTrendModal()">📈 多机组趋势对比</button>
+        </div>
+        <div class="card" style="background:#fefce8; margin-top:0;">
+            <div class="section-title" style="border-left-color:#eab308;">📊 全厂级平均值</div>
+            <div id="globalAveragePanel" style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.8rem;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 其他弹窗 -->
+<div id="thresholdModal" class="modal-overlay hidden" onclick="if(event.target===this)closeThresholdModal()"><div class="modal"><div class="modal-header"><div class="modal-title">⚙️ 测点阈值配置</div><button class="modal-close" onclick="closeThresholdModal()">✕</button></div><div class="threshold-grid" id="thresholdGrid"></div><div class="flex-between" style="margin-top:16px;"><button class="btn btn-primary" onclick="reanalyze();closeThresholdModal()">保存并重新分析</button></div></div></div>
+<div id="abnormalModal" class="modal-overlay hidden" onclick="if(event.target===this)closeAbnormalModal()"><div class="modal"><div class="modal-header"><div class="modal-title">🚨 异常机组详情</div><button class="modal-close" onclick="closeAbnormalModal()">✕</button></div><div class="table-wrapper"><tr><thead><tr><th>机组</th><th>状态</th><th>最高告警测点</th><th>当前值</th><th>阈值信息</th><th>趋势(斜率)</th></tr></thead><tbody id="abnormalTableBody"></tbody></table></div><div class="insight-bar" id="abnormalInsight"></div></div></div>
+<div id="compareModal" class="modal-overlay hidden" onclick="if(event.target===this)closeCompareModal()"><div class="modal"><div class="modal-header"><div class="modal-title">⚖️ 同测点机组对比</div><button class="modal-close" onclick="closeCompareModal()">✕</button></div><div class="flex-between" style="margin-bottom:16px;"><div><span>📌 测点:</span><select id="compareMetricSelect" onchange="renderCrossComparison()"></select></div><div><span>⚠️ 偏离阈值(%):</span><input type="number" id="deviationThreshold" value="25" step="5" style="width:80px;"><button class="btn btn-outline" onclick="updateCompareThreshold()">应用</button></div></div><div class="table-wrapper"><table><thead><tr><th>机组</th><th>测点值</th><th>全厂均值</th><th>偏离%</th><th>状态</th></tr></thead><tbody id="compareTableBody"></tbody></table></div></div></div>
+<div id="deviationModal" class="modal-overlay hidden" onclick="if(event.target===this)closeDeviationModal()"><div class="modal"><div class="modal-header"><div class="modal-title">📊 全场测点偏差总结</div><button class="modal-close" onclick="closeDeviationModal()">✕</button></div><div class="flex-between" style="margin-bottom:12px;"><div><span>🔍 标准差倍数:</span><input type="number" id="stdMultiplier" value="1.5" step="0.1" style="width:80px;"><button class="btn btn-outline" onclick="renderDeviationSummary()">刷新</button></div><button class="btn btn-copy" onclick="copyDeviationSummary()">📋 复制报告</button></div><div id="summaryTextBlock" class="summary-text hidden"></div><div id="deviationContainer" style="max-height:50vh; overflow-y:auto;"></div></div></div>
+
+<!-- ========== 全屏趋势对比弹窗 ========== -->
+<div id="trendModal" class="modal-overlay hidden" onclick="if(event.target===this)closeTrendModal()">
+    <div class="modal modal-fullscreen" id="trendModalContent">
+        <div class="modal-header">
+            <div class="modal-title">
+                📈 多机组趋势对比
+                <button class="btn btn-outline" style="padding:4px 12px; font-size:0.7rem;" onclick="toggleFullscreen()">⛶ 切换全屏</button>
+            </div>
+            <button class="modal-close" onclick="closeTrendModal()">✕</button>
+        </div>
+        <div class="modal-body" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+            <div class="multi-selector">
+                <div><span>📌 测点:</span> <select id="trendColumn" onchange="rebuildTrendChart()" style="padding:6px 12px; border-radius:40px;"></select></div>
+                <div><span>🕒 起始:</span> <input type="datetime-local" id="trendStart" onchange="rebuildTrendChart()">
+                <span>结束:</span> <input type="datetime-local" id="trendEnd" onchange="rebuildTrendChart()">
+                <button class="btn btn-outline" onclick="clearTrendTime()">清除</button></div>
+                <div><button class="btn btn-outline" onclick="selectAllTurbines(true)">✅ 全选</button>
+                <button class="btn btn-outline" onclick="selectAllTurbines(false)">⬜ 全不选</button></div>
+            </div>
+            <div id="trendTurbineList" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; max-height:100px; overflow-y:auto; padding:8px; background:#f8fafc; border-radius:20px;"></div>
+            <div class="chart-container" style="flex:1; min-height:0;"><canvas id="trendCanvas"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ==================== 全局变量 ====================
+    let allData = {};
+    let allColumns = [];
+    let thresholds = {};
+    let analysisResult = [];
+    let trendChart = null;
+    let compareThreshold = 25;
+
+    // ==================== 默认阈值库 ====================
+    const keywordDefaults = [
+        { keywords: ['发电机绕组u1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机绕组u2温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机绕组v1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机绕组v2温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机绕组w1温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机绕组w2温度'], highWarn: 145, highFault: 155, lowWarn: null, lowFault: null },
+        { keywords: ['发电机冷却水温度'], highWarn: 55, highFault: 60, lowWarn: null, lowFault: null },
+        { keywords: ['环境温度'], highWarn: 40, highFault: 50, lowWarn: -25, lowFault: -30 },
+        { keywords: ['机舱温度'], highWarn: 50, highFault: 60, lowWarn: -25, lowFault: -30 },
+        { keywords: ['机舱控制柜温度'], highWarn: 50, highFault: 60, lowWarn: -18, lowFault: -20 },
+        { keywords: ['塔基控制柜温度'], highWarn: 50, highFault: 60, lowWarn: -18, lowFault: -20 },
+        { keywords: ['轮毂温度'], highWarn: 50, highFault: 55, lowWarn: null, lowFault: null },
+        { keywords: ['齿轮箱油池温度'], highWarn: 75, highFault: 80, lowWarn: null, lowFault: null },
+    ];
+    
+    function getDefault(col) {
+        const n = col.toLowerCase();
+        for (let r of keywordDefaults) 
+            for (let k of r.keywords) 
+                if (n.includes(k.toLowerCase())) 
+                    return { warnHigh: r.highWarn, faultHigh: r.highFault, warnLow: r.lowWarn, faultLow: r.lowFault };
+        return null;
+    }
+    
+    function loadThresholds() { 
+        const s = localStorage.getItem('turbine_v121');
+        if (s) try { thresholds = JSON.parse(s); } catch(e) { thresholds = {}; }
+        else thresholds = {};
+    }
+    function saveThresholds() { localStorage.setItem('turbine_v121', JSON.stringify(thresholds)); }
+
+    // 线性回归斜率
+    function calculateSlope(values) {
+        const n = values.length;
+        if (n < 2) return 0;
+        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        for (let i = 0; i < n; i++) {
+            sumX += i;
+            sumY += values[i];
+            sumXY += i * values[i];
+            sumX2 += i * i;
+        }
+        const denom = n * sumX2 - sumX * sumX;
+        return denom === 0 ? 0 : (n * sumXY - sumX * sumY) / denom;
+    }
+    
+    function getTrend(entries, column) {
+        if (!column || entries.length < 2) return { trend: 'stable', slope: 0, detail: '' };
+        const values = [];
+        for (let e of entries) {
+            let v = parseFloat(e.row[column]);
+            if (!isNaN(v)) values.push(v);
+            else return { trend: 'stable', slope: 0, detail: '' };
+        }
+        const slope = calculateSlope(values);
+        const first = values[0], last = values[values.length - 1], delta = last - first;
+        let trend = 'stable';
+        if (slope > 0.05 || delta > 1) trend = 'rising';
+        else if (slope < -0.05 || delta < -1) trend = 'falling';
+        return { trend, slope, detail: `斜率=${slope.toFixed(3)} Δ=${delta >= 0 ? '+' : ''}${delta.toFixed(2)}` };
+    }
+
+    // 全厂统计
+    function computeGlobalStats() {
+        if (!allData || Object.keys(allData).length === 0) return { mean: {}, std: {} };
+        const valuesMap = {};
+        allColumns.forEach(c => valuesMap[c] = []);
+        for (let entries of Object.values(allData)) {
+            const latest = entries[entries.length - 1].row;
+            for (let col of allColumns) {
+                let v = parseFloat(latest[col]);
+                if (!isNaN(v)) valuesMap[col].push(v);
+            }
+        }
+        const mean = {}, std = {};
+        for (let col of allColumns) {
+            const arr = valuesMap[col];
+            if (arr.length === 0) { mean[col] = '—'; std[col] = '—'; continue; }
+            const m = arr.reduce((a, b) => a + b, 0) / arr.length;
+            mean[col] = m;
+            const variance = arr.reduce((sum, val) => sum + Math.pow(val - m, 2), 0) / arr.length;
+            std[col] = Math.sqrt(variance);
+        }
+        return { mean, std };
+    }
+
+    // 主分析函数
+    function analyzeData() {
+        if (!Object.keys(allData).length) return;
+        analysisResult = [];
+        
+        for (let [name, entries] of Object.entries(allData)) {
+            const latest = entries[entries.length - 1];
+            let worstL = 'normal', worstC = '', worstV = 0, worstD = null, worstTI = '';
+            
+            for (let col of allColumns) {
+                const cfg = thresholds[col];
+                if (!cfg) continue;
+                const val = parseFloat(latest.row[col]);
+                if (isNaN(val)) continue;
+                
+                let level = 'normal', dir = null;
+                if (cfg.faultHigh !== undefined && val >= cfg.faultHigh) { level = 'fault'; dir = 'high'; }
+                else if (cfg.faultLow !== undefined && val <= cfg.faultLow) { level = 'fault'; dir = 'low'; }
+                else if (cfg.warnHigh !== undefined && val >= cfg.warnHigh) { level = 'warning'; dir = 'high'; }
+                else if (cfg.warnLow !== undefined && val <= cfg.warnLow) { level = 'warning'; dir = 'low'; }
+                
+                if (level === 'fault' && (worstL !== 'fault' || Math.abs(val) > Math.abs(worstV))) {
+                    worstL = 'fault'; worstC = col; worstV = val; worstD = dir;
+                } else if (level === 'warning' && worstL !== 'fault' && (worstL !== 'warning' || Math.abs(val) > Math.abs(worstV))) {
+                    worstL = 'warning'; worstC = col; worstV = val; worstD = dir;
+                }
+            }
+            
+            if (worstC) {
+                const cfg = thresholds[worstC] || {};
+                const p = [];
+                if (cfg.warnHigh) p.push(`↑预${cfg.warnHigh}`);
+                if (cfg.faultHigh) p.push(`↑故${cfg.faultHigh}`);
+                if (cfg.warnLow) p.push(`↓预${cfg.warnLow}`);
+                if (cfg.faultLow) p.push(`↓故${cfg.faultLow}`);
+                worstTI = p.join(' / ');
+            }
+            
+            const trendRes = getTrend(entries, worstC || allColumns[0]);
+            analysisResult.push({ 
+                name, level: worstL, col: worstC, value: worstV, direction: worstD, 
+                thresholdInfo: worstTI, trend: trendRes.trend, trendDetail: trendRes.detail, entries 
+            });
+        }
+        
+        const order = { fault: 0, warning: 1, normal: 2 };
+        analysisResult.sort((a, b) => order[a.level] - order[b.level] || Math.abs(b.value) - Math.abs(a.value));
+        
+        const totalFault = analysisResult.filter(r => r.level === 'fault').length;
+        const totalWarn = analysisResult.filter(r => r.level === 'warning').length;
+        document.getElementById('statisticalSummary').innerHTML = `
+            <div class="stat-pill">🏭 总机组 ${analysisResult.length}</div>
+            <div class="stat-pill">🚨 故障 <span class="stat-number">${totalFault}</span></div>
+            <div class="stat-pill">⚠️ 预警 <span class="stat-number">${totalWarn}</span></div>
+            <div class="stat-pill">📈 上升 ${analysisResult.filter(r => r.trend === 'rising').length}</div>
+        `;
+        document.getElementById('statsRowMain').classList.remove('hidden');
+        document.getElementById('btnClear').classList.remove('hidden');
+        
+        const { mean } = computeGlobalStats();
+        const avgHtml = [];
+        allColumns.slice(0, 16).forEach(col => {
+            const v = mean[col] !== '—' ? mean[col].toFixed(2) : '—';
+            avgHtml.push(`<span style="background:#eef2ff; padding:4px 12px; border-radius:24px;">📌 ${col}: <strong>${v}</strong></span>`);
+        });
+        document.getElementById('globalAveragePanel').innerHTML = avgHtml.join('');
+        
+        renderAbnormalList();
+        renderCrossComparison();
+        renderDeviationSummary();
+        updateTrendTurbineList();
+    }
+    
+    function renderAbnormalList() {
+        const abnormals = analysisResult.filter(r => r.level !== 'normal');
+        const tbody = document.getElementById('abnormalTableBody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        for (let r of abnormals) {
+            const badge = r.level === 'fault' ? '<span class="badge badge-danger">故障</span>' : '<span class="badge badge-warning">预警</span>';
+            const trendClass = r.trend === 'rising' ? 'trend-up' : (r.trend === 'falling' ? 'trend-down' : 'trend-stable');
+            tbody.insertAdjacentHTML('beforeend', `<tr><td><strong>${r.name}</strong></td><td>${badge}</td><td>${r.col || '—'} ${r.direction ? `(${r.direction === 'high' ? '过高' : '过低'})` : ''}</td><td><strong>${r.value ? r.value.toFixed(2) : '—'}</strong></td><td style="font-size:0.7rem;">${r.thresholdInfo || '—'}</td><td><span class="badge ${trendClass}">${r.trend} (${r.trendDetail})</span></td></tr>`);
+        }
+        document.getElementById('abnormalInsight').innerHTML = abnormals.length ? `共 ${abnormals.length} 台异常机组` : '无异常机组';
+    }
+    
+    function renderCrossComparison() {
+        const col = document.getElementById('compareMetricSelect')?.value;
+        if (!col || !allData) return;
+        const { mean } = computeGlobalStats();
+        const gavg = mean[col];
+        if (gavg === '—') return;
+        let rows = '';
+        for (let [name, entries] of Object.entries(allData)) {
+            const val = parseFloat(entries[entries.length - 1].row[col]);
+            if (isNaN(val)) continue;
+            const dev = ((val - gavg) / gavg) * 100;
+            const isWarn = Math.abs(dev) > compareThreshold;
+            rows += `<tr style="${isWarn ? 'background:#fff3e3' : ''}"><td><strong>${name}</strong></td><td>${val.toFixed(2)}</td><td>${gavg.toFixed(2)}</td><td>${dev >= 0 ? '+' : ''}${dev.toFixed(1)}%</td><td>${isWarn ? '<span class="badge badge-warning">超出阈值</span>' : '<span class="badge badge-normal">正常</span>'}</td></tr>`;
+        }
+        document.getElementById('compareTableBody').innerHTML = rows;
+    }
+    
+    function renderDeviationSummary() {
+        if (!allData || !allColumns.length) return;
+        const { mean, std } = computeGlobalStats();
+        const mult = parseFloat(document.getElementById('stdMultiplier').value) || 1.5;
+        const container = document.getElementById('deviationContainer');
+        let html = '', summaryLines = [];
+        for (let col of allColumns) {
+            const m = mean[col], sd = std[col];
+            if (m === '—' || sd === '—' || sd === 0) {
+                html += `<div class="deviation-item">📌 ${col} — 数据不足</div>`;
+                continue;
+            }
+            const lower = m - mult * sd, upper = m + mult * sd;
+            const deviated = [];
+            for (let [name, entries] of Object.entries(allData)) {
+                const val = parseFloat(entries[entries.length - 1].row[col]);
+                if (isNaN(val)) continue;
+                if (val < lower || val > upper) {
+                    deviated.push({ name, val, dev: ((val - m) / m) * 100 });
+                }
+            }
+            if (deviated.length === 0) {
+                html += `<div class="deviation-item" style="background:#f0fdf4;">✅ ${col} — 全部正常</div>`;
+                continue;
+            }
+            deviated.sort((a, b) => Math.abs(b.dev) - Math.abs(a.dev));
+            const list = deviated.map(t => `${t.name}(${t.val.toFixed(1)},${t.dev > 0 ? '+' : ''}${t.dev.toFixed(0)}%)`).join('；');
+            summaryLines.push(`【${col}】${deviated.length}台异常 (均值${m.toFixed(1)}, 正常范围${lower.toFixed(1)}~${upper.toFixed(1)})：${list}`);
+            html += `<div class="deviation-item" style="background:#fffbeb;"><strong>⚠️ ${col}</strong> (均值${m.toFixed(1)} 区间${lower.toFixed(1)}~${upper.toFixed(1)})<br>偏离: ${list}</div>`;
+        }
+        container.innerHTML = html || '<div>无数据</div>';
+        const summaryText = `【风机监控偏差报告】\n${summaryLines.join('\n')}\n（阈值：${mult}倍标准差）`;
+        document.getElementById('summaryTextBlock').innerText = summaryText;
+        document.getElementById('summaryTextBlock').classList.remove('hidden');
+    }
+    
+    function copyDeviationSummary() {
+        const text = document.getElementById('summaryTextBlock').innerText;
+        navigator.clipboard.writeText(text).then(() => alert('总结已复制')).catch(() => alert('复制失败'));
+    }
+    
+    // ========== 全屏趋势对比相关函数 ==========
+    function updateTrendTurbineList() {
+        const container = document.getElementById('trendTurbineList');
+        if (!container) return;
+        container.innerHTML = '';
+        const turbines = Object.keys(allData).sort();
+        if (turbines.length === 0) return;
+        // 默认选中前3个或全部（不超过5个）
+        const defaultSelected = turbines.slice(0, Math.min(5, turbines.length));
+        turbines.forEach(turb => {
+            const isChecked = defaultSelected.includes(turb);
+            const label = document.createElement('label');
+            label.className = 'turbine-check-label';
+            label.innerHTML = `<input type="checkbox" value="${turb}" ${isChecked ? 'checked' : ''} onchange="rebuildTrendChart()"> <span>${turb}</span>`;
+            container.appendChild(label);
+        });
+        setTimeout(() => rebuildTrendChart(), 100);
+    }
+    
+    function selectAllTurbines(selectAll) {
+        const checkboxes = document.querySelectorAll('#trendTurbineList input[type="checkbox"]');
+        checkboxes.forEach(cb => { cb.checked = selectAll; });
+        rebuildTrendChart();
+    }
+    
+    function rebuildTrendChart() {
+        const column = document.getElementById('trendColumn').value;
+        if (!column || !allData) return;
+        const selected = Array.from(document.querySelectorAll('#trendTurbineList input:checked')).map(cb => cb.value);
+        if (selected.length === 0) return;
+        const start = document.getElementById('trendStart').value ? new Date(document.getElementById('trendStart').value) : null;
+        const end = document.getElementById('trendEnd').value ? new Date(document.getElementById('trendEnd').value) : null;
+        const datasets = [];
+        const colors = ['#2563eb', '#dc2626', '#eab308', '#10b981', '#8b5cf6', '#f97316', '#ec489a', '#06b6d4', '#6366f1', '#14b8a6'];
+        let globalLabels = null;
+        
+        for (let idx = 0; idx < selected.length; idx++) {
+            const name = selected[idx];
+            const entries = allData[name];
+            if (!entries) continue;
+            let filtered = entries.filter(e => {
+                if (start && e.ts < start) return false;
+                if (end && e.ts > end) return false;
+                return true;
+            });
+            if (filtered.length === 0) continue;
+            const labels = filtered.map(e => `${e.ts.getMonth() + 1}/${e.ts.getDate()} ${String(e.ts.getHours()).padStart(2, '0')}:${String(e.ts.getMinutes()).padStart(2, '0')}`);
+            if (!globalLabels) globalLabels = labels;
+            const values = filtered.map(e => parseFloat(e.row[column])).filter(v => !isNaN(v));
+            if (values.length) {
+                datasets.push({
+                    label: name,
+                    data: values,
+                    borderColor: colors[idx % colors.length],
+                    borderWidth: 2.5,
+                    fill: false,
+                    tension: 0.2,
+                    pointRadius: 3,
+                    pointHoverRadius: 6
+                });
+            }
+        }
+        if (!datasets.length || !globalLabels) return;
+        const ctx = document.getElementById('trendCanvas').getContext('2d');
+        if (trendChart) trendChart.destroy();
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: globalLabels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { font: { size: 11 } } },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    y: { title: { display: true, text: column, font: { size: 11 } } },
+                    x: { ticks: { maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 15 } }
+                }
+            }
+        });
+    }
+    
+    function clearTrendTime() {
+        document.getElementById('trendStart').value = '';
+        document.getElementById('trendEnd').value = '';
+        rebuildTrendChart();
+    }
+    
+    // 全屏切换功能
+    function toggleFullscreen() {
+        const modalContent = document.getElementById('trendModalContent');
+        if (modalContent.classList.contains('modal-fullscreen')) {
+            modalContent.classList.remove('modal-fullscreen');
+            modalContent.style.width = '';
+            modalContent.style.height = '';
+        } else {
+            modalContent.classList.add('modal-fullscreen');
+        }
+        // 重新调整图表大小
+        setTimeout(() => {
+            if (trendChart) trendChart.resize();
+        }, 100);
+    }
+    
+    function updateCompareThreshold() {
+        compareThreshold = parseFloat(document.getElementById('deviationThreshold').value) || 25;
+        renderCrossComparison();
+    }
+    
+    // 阈值面板
+    function renderThresholdPanel() {
+        const grid = document.getElementById('thresholdGrid');
+        if (!allColumns.length) { grid.innerHTML = '<div>请先上传数据</div>'; return; }
+        grid.innerHTML = allColumns.map(col => {
+            const c = thresholds[col] || {};
+            const d = getDefault(col);
+            const wh = c.warnHigh ?? d?.warnHigh ?? '';
+            const fh = c.faultHigh ?? d?.faultHigh ?? '';
+            const wl = c.warnLow ?? d?.warnLow ?? '';
+            const fl = c.faultLow ?? d?.faultLow ?? '';
+            return `<div class="threshold-item"><label style="min-width:130px;">${col}</label>
+                <div>↑预<input type="number" value="${wh}" onchange="upd('${col.replace(/'/g, "\\'")}','warnHigh',this.value)"></div>
+                <div>↑故<input type="number" value="${fh}" onchange="upd('${col.replace(/'/g, "\\'")}','faultHigh',this.value)"></div>
+                <div>↓预<input type="number" value="${wl}" onchange="upd('${col.replace(/'/g, "\\'")}','warnLow',this.value)"></div>
+                <div>↓故<input type="number" value="${fl}" onchange="upd('${col.replace(/'/g, "\\'")}','faultLow',this.value)"></div></div>`;
+        }).join('');
+    }
+    
+    window.upd = function(col, field, val) {
+        if (!thresholds[col]) thresholds[col] = {};
+        const num = parseFloat(val);
+        isNaN(num) ? delete thresholds[col][field] : thresholds[col][field] = num;
+        if (Object.keys(thresholds[col]).length === 0) delete thresholds[col];
+        saveThresholds();
+    };
+    
+    function resetAllThresholds() {
+        if (!confirm('重置所有阈值？')) return;
+        thresholds = {};
+        allColumns.forEach(c => { const d = getDefault(c); if (d) thresholds[c] = { ...d }; });
+        saveThresholds();
+        renderThresholdPanel();
+        if (Object.keys(allData).length) analyzeData();
+    }
+    
+    function reanalyze() { if (Object.keys(allData).length) analyzeData(); else alert('请先上传数据'); }
+    function clearAll() { allData = {}; allColumns = []; analysisResult = []; document.getElementById('statsRowMain')?.classList.add('hidden'); document.getElementById('btnClear')?.classList.add('hidden'); document.getElementById('fileNameDisplay').innerText = ''; }
+    
+    // 弹窗控制
+    function openThresholdModal() { renderThresholdPanel(); document.getElementById('thresholdModal').classList.remove('hidden'); }
+    function closeThresholdModal() { document.getElementById('thresholdModal').classList.add('hidden'); }
+    function openAbnormalModal() { renderAbnormalList(); document.getElementById('abnormalModal').classList.remove('hidden'); }
+    function closeAbnormalModal() { document.getElementById('abnormalModal').classList.add('hidden'); }
+    function openCompareModal() { 
+        const select = document.getElementById('compareMetricSelect');
+        if (allColumns.length) select.innerHTML = allColumns.map(c => `<option value="${c}">${c}</option>`).join('');
+        renderCrossComparison();
+        document.getElementById('compareModal').classList.remove('hidden');
+    }
+    function closeCompareModal() { document.getElementById('compareModal').classList.add('hidden'); }
+    function openDeviationModal() { renderDeviationSummary(); document.getElementById('deviationModal').classList.remove('hidden'); }
+    function closeDeviationModal() { document.getElementById('deviationModal').classList.add('hidden'); }
+    function openTrendModal() {
+        const select = document.getElementById('trendColumn');
+        if (allColumns.length) select.innerHTML = allColumns.map(c => `<option value="${c}">${c}</option>`).join('');
+        const now = new Date(), weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+        document.getElementById('trendStart').value = weekAgo.toISOString().slice(0, 16);
+        document.getElementById('trendEnd').value = now.toISOString().slice(0, 16);
+        updateTrendTurbineList();
+        document.getElementById('trendModal').classList.remove('hidden');
+    }
+    function closeTrendModal() { document.getElementById('trendModal').classList.add('hidden'); if (trendChart) { trendChart.destroy(); trendChart = null; } }
+    
+    // 文件处理
+    function handleFile(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('fileNameDisplay').innerHTML = '📄 ' + file.name;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: null });
+                if (!rows.length) { alert('Excel文件中没有数据行'); return; }
+                const firstRow = rows[0];
+                let turbineCol = firstRow.hasOwnProperty('机组名称') ? '机组名称' : (firstRow.hasOwnProperty('机组') ? '机组' : null);
+                let timeCol = firstRow.hasOwnProperty('时间') ? '时间' : 'timestamp';
+                if (!turbineCol) { alert('缺少机组列'); return; }
+                allColumns = Object.keys(firstRow).filter(k => k !== turbineCol && k !== timeCol);
+                if (allColumns.length === 0) { alert('未找到测点列'); return; }
+                const map = {};
+                for (let row of rows) {
+                    const name = row[turbineCol], timeStr = row[timeCol];
+                    if (!name || !timeStr) continue;
+                    let ts;
+                    try { ts = new Date(timeStr.replace(' ', 'T')); if (isNaN(ts)) throw 0; } catch { 
+                        const parts = String(timeStr).split(/[ :\-]/);
+                        if (parts.length >= 3) ts = new Date(parts[0], parts[1]-1, parts[2], parts[3]||0, parts[4]||0, parts[5]||0);
+                        else continue;
+                    }
+                    if (!map[name]) map[name] = [];
+                    map[name].push({ ts, row });
+                }
+                for (let n in map) map[n].sort((a,b) => a.ts - b.ts);
+                allData = map;
+                loadThresholds();
+                let changed = false;
+                allColumns.forEach(col => { if (!thresholds[col]) { const d = getDefault(col); if (d) { thresholds[col] = { ...d }; changed = true; } } });
+                if (changed) saveThresholds();
+                renderThresholdPanel();
+                analyzeData();
+                document.getElementById('fileNameDisplay').innerHTML = `✅ 已加载: ${file.name} (${Object.keys(allData).length}台机组)`;
+            } catch(err) { alert('解析失败: ' + err.message); }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+    
+    // 事件绑定
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('fileInput').addEventListener('change', handleFile);
+        const zone = document.getElementById('uploadZone');
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('drag-over');
+            if (e.dataTransfer.files[0]) {
+                document.getElementById('fileInput').files = e.dataTransfer.files;
+                handleFile({ target: { files: [e.dataTransfer.files[0]] } });
+            }
+        });
+        loadThresholds();
+    });
+    
+    // 暴露全局函数
+    window.openThresholdModal = openThresholdModal;
+    window.closeThresholdModal = closeThresholdModal;
+    window.openAbnormalModal = openAbnormalModal;
+    window.closeAbnormalModal = closeAbnormalModal;
+    window.openCompareModal = openCompareModal;
+    window.closeCompareModal = closeCompareModal;
+    window.openDeviationModal = openDeviationModal;
+    window.closeDeviationModal = closeDeviationModal;
+    window.openTrendModal = openTrendModal;
+    window.closeTrendModal = closeTrendModal;
+    window.updateCompareThreshold = updateCompareThreshold;
+    window.rebuildTrendChart = rebuildTrendChart;
+    window.clearTrendTime = clearTrendTime;
+    window.reanalyze = reanalyze;
+    window.resetAllThresholds = resetAllThresholds;
+    window.clearAll = clearAll;
+    window.copyDeviationSummary = copyDeviationSummary;
+    window.selectAllTurbines = selectAllTurbines;
+    window.toggleFullscreen = toggleFullscreen;
+</script>
+</body>
+</html>
