@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>风机智能监控 v12.1 · 全屏趋势对比</title>
+    <title>风机温度监控v1.0</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
@@ -192,7 +192,7 @@
             <button class="btn btn-primary" onclick="openTrendModal()">📈 多机组趋势对比</button>
         </div>
         <div class="card" style="background:#fefce8; margin-top:0;">
-            <div class="section-title" style="border-left-color:#eab308;">📊 全厂级平均值</div>
+            <div class="section-title" style="border-left-color:#eab308;">📊 全场级平均值</div>
             <div id="globalAveragePanel" style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.8rem;"></div>
         </div>
     </div>
@@ -201,7 +201,7 @@
 <!-- 其他弹窗 -->
 <div id="thresholdModal" class="modal-overlay hidden" onclick="if(event.target===this)closeThresholdModal()"><div class="modal"><div class="modal-header"><div class="modal-title">⚙️ 测点阈值配置</div><button class="modal-close" onclick="closeThresholdModal()">✕</button></div><div class="threshold-grid" id="thresholdGrid"></div><div class="flex-between" style="margin-top:16px;"><button class="btn btn-primary" onclick="reanalyze();closeThresholdModal()">保存并重新分析</button></div></div></div>
 <div id="abnormalModal" class="modal-overlay hidden" onclick="if(event.target===this)closeAbnormalModal()"><div class="modal"><div class="modal-header"><div class="modal-title">🚨 异常机组详情</div><button class="modal-close" onclick="closeAbnormalModal()">✕</button></div><div class="table-wrapper"><tr><thead><tr><th>机组</th><th>状态</th><th>最高告警测点</th><th>当前值</th><th>阈值信息</th><th>趋势(斜率)</th></tr></thead><tbody id="abnormalTableBody"></tbody></table></div><div class="insight-bar" id="abnormalInsight"></div></div></div>
-<div id="compareModal" class="modal-overlay hidden" onclick="if(event.target===this)closeCompareModal()"><div class="modal"><div class="modal-header"><div class="modal-title">⚖️ 同测点机组对比</div><button class="modal-close" onclick="closeCompareModal()">✕</button></div><div class="flex-between" style="margin-bottom:16px;"><div><span>📌 测点:</span><select id="compareMetricSelect" onchange="renderCrossComparison()"></select></div><div><span>⚠️ 偏离阈值(%):</span><input type="number" id="deviationThreshold" value="25" step="5" style="width:80px;"><button class="btn btn-outline" onclick="updateCompareThreshold()">应用</button></div></div><div class="table-wrapper"><table><thead><tr><th>机组</th><th>测点值</th><th>全厂均值</th><th>偏离%</th><th>状态</th></tr></thead><tbody id="compareTableBody"></tbody></table></div></div></div>
+<div id="compareModal" class="modal-overlay hidden" onclick="if(event.target===this)closeCompareModal()"><div class="modal"><div class="modal-header"><div class="modal-title">⚖️ 同测点机组对比</div><button class="modal-close" onclick="closeCompareModal()">✕</button></div><div class="flex-between" style="margin-bottom:16px;"><div><span>📌 测点:</span><select id="compareMetricSelect" onchange="renderCrossComparison()"></select></div><div><span>⚠️ 偏离阈值(%):</span><input type="number" id="deviationThreshold" value="25" step="5" style="width:80px;"><button class="btn btn-outline" onclick="updateCompareThreshold()">应用</button></div></div><div class="table-wrapper"><table><thead><tr><th>机组</th><th>测点值</th><th>全场均值</th><th>偏离%</th><th>状态</th></tr></thead><tbody id="compareTableBody"></tbody></table></div></div></div>
 <div id="deviationModal" class="modal-overlay hidden" onclick="if(event.target===this)closeDeviationModal()"><div class="modal"><div class="modal-header"><div class="modal-title">📊 全场测点偏差总结</div><button class="modal-close" onclick="closeDeviationModal()">✕</button></div><div class="flex-between" style="margin-bottom:12px;"><div><span>🔍 标准差倍数:</span><input type="number" id="stdMultiplier" value="1.5" step="0.1" style="width:80px;"><button class="btn btn-outline" onclick="renderDeviationSummary()">刷新</button></div><button class="btn btn-copy" onclick="copyDeviationSummary()">📋 复制报告</button></div><div id="summaryTextBlock" class="summary-text hidden"></div><div id="deviationContainer" style="max-height:50vh; overflow-y:auto;"></div></div></div>
 
 <!-- ========== 全屏趋势对比弹窗 ========== -->
@@ -302,7 +302,7 @@
         return { trend, slope, detail: `斜率=${slope.toFixed(3)} Δ=${delta >= 0 ? '+' : ''}${delta.toFixed(2)}` };
     }
 
-    // 全厂统计
+    // 全场统计
     function computeGlobalStats() {
         if (!allData || Object.keys(allData).length === 0) return { mean: {}, std: {} };
         const valuesMap = {};
